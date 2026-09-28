@@ -6,12 +6,12 @@ window.STATE =
   "mode": "interview",
   "depth": "normal",
   "polish": null,
-  "tier": null,
+  "tier": "T2",
   "briefFile": "2026-09-28-brief.md",
   "memoryFile": "CLAUDE.md",
   "skillDir": "C:/Users/P famly/.claude/skills/autopilot",
   "startedAt": "2026-09-28T19:36:47+03:00",
-  "updatedAt": "2026-09-28T19:39:02+03:00",
+  "updatedAt": "2026-09-28T20:14:42+03:00",
   "finishedAt": null,
   "stages": [
     {
@@ -28,24 +28,35 @@ window.STATE =
     },
     {
       "id": "briefing",
-      "status": "active",
-      "startedAt": "2026-09-28T19:39:02+03:00"
+      "status": "done",
+      "startedAt": "2026-09-28T19:39:02+03:00",
+      "finishedAt": "2026-09-28T19:54:59+03:00",
+      "note": "11 вопросов"
     },
     {
       "id": "spec",
-      "status": "pending"
+      "status": "done",
+      "startedAt": "2026-09-28T19:50:55+03:00",
+      "finishedAt": "2026-09-28T19:54:59+03:00"
     },
     {
       "id": "plan",
-      "status": "pending"
+      "status": "done",
+      "startedAt": "2026-09-28T19:54:59+03:00",
+      "note": "5 тасков, ярус T2, 3 волны",
+      "finishedAt": "2026-09-28T19:58:32+03:00"
     },
     {
       "id": "build",
-      "status": "pending"
+      "status": "active",
+      "startedAt": "2026-09-28T19:58:32+03:00",
+      "note": "0 из 5 тасков готовы"
     },
     {
       "id": "review",
-      "status": "pending"
+      "status": "active",
+      "startedAt": "2026-09-28T20:08:05+03:00",
+      "note": "01 на ревью, 02 в ремонте"
     },
     {
       "id": "final",
@@ -55,26 +66,154 @@ window.STATE =
   "requirements": {
     "total": 11,
     "done": 0,
-    "inTicket": 0,
+    "inTicket": 8,
     "inSpec": 0,
     "placeholder": 0,
-    "deferred": 0,
+    "deferred": 3,
     "dropped": 0
   },
-  "tickets": [],
+  "tickets": [
+    {
+      "id": "01",
+      "title": "Каркас сайта: запуск, меню, чтение, поиск",
+      "requirements": [
+        "R01",
+        "R09i",
+        "R11i"
+      ],
+      "blockedBy": [],
+      "wave": 1,
+      "zone": [
+        "app/server.py",
+        "app/web/ (каркас)",
+        "Запустить.bat"
+      ],
+      "status": "review",
+      "retries": 0,
+      "repairs": 0,
+      "handoffs": 0,
+      "startedAt": "2026-09-28T19:58:32+03:00"
+    },
+    {
+      "id": "02",
+      "title": "Исследование: тарифы Ozon Global",
+      "requirements": [
+        "R02",
+        "R10i",
+        "R04"
+      ],
+      "blockedBy": [],
+      "wave": 1,
+      "zone": [
+        "Азия/Китай/05_*",
+        "data/tariffs.default.json"
+      ],
+      "status": "repair",
+      "retries": 0,
+      "repairs": 1,
+      "handoffs": 0,
+      "startedAt": "2026-09-28T19:58:32+03:00",
+      "repairFindings": [
+        "R02: комиссии и логистика все null — нужен действующий источник 2025-12+/2026 или явный отказ",
+        "D01: нет unit у листьев (RUB/EUR/share), нет bands в заметке"
+      ]
+    },
+    {
+      "id": "03",
+      "title": "Калькулятор: расчёт, схемы, тарифы, курс",
+      "requirements": [
+        "D01",
+        "R03",
+        "R04",
+        "R10i"
+      ],
+      "blockedBy": [
+        "01"
+      ],
+      "wave": 2,
+      "zone": [
+        "app/web/js/calc.js",
+        "views/calc, views/tariffs"
+      ],
+      "status": "pending",
+      "retries": 0,
+      "repairs": 0,
+      "handoffs": 0
+    },
+    {
+      "id": "04",
+      "title": "Проверка заметок и журнал изменений",
+      "requirements": [
+        "R02"
+      ],
+      "blockedBy": [
+        "02"
+      ],
+      "wave": 2,
+      "zone": [
+        "существующие .md",
+        "README.md",
+        "Журнал_изменений.md"
+      ],
+      "status": "pending",
+      "retries": 0,
+      "repairs": 0,
+      "handoffs": 0
+    },
+    {
+      "id": "05",
+      "title": "Главная со сроками и список товаров",
+      "requirements": [
+        "R01",
+        "R03",
+        "R11i"
+      ],
+      "blockedBy": [
+        "03",
+        "04"
+      ],
+      "wave": 3,
+      "zone": [
+        "calendar.js",
+        "views/home, views/products",
+        "data/calendar.json"
+      ],
+      "status": "pending",
+      "retries": 0,
+      "repairs": 0,
+      "handoffs": 0
+    }
+  ],
   "singlePass": null,
-  "tests": null,
+  "tests": {
+    "passed": 24,
+    "failed": 0
+  },
   "debt": {
-    "placeholders": [],
+    "placeholders": [
+      "Дата регистрации компании — впишете на главной",
+      "Тарифы без открытых данных — впишете из кабинета Ozon",
+      "Ставки своего агента и склада FBP — ориентиры из заметок"
+    ],
     "assumptions": [],
     "emptyEnv": []
   },
   "additions": [],
-  "coverage": null,
+  "coverage": {
+    "findings": 9,
+    "actions": [
+      "ответы брифинга не попали в бриф → дописаны в «Дополнения» (закрывает 15 пунктов «есть в spec, нет в брифе» и «дополни её»)",
+      "категории не названы → решение 16",
+      "партнёры логистики и выбор тарифа → решение 17, ист. 11",
+      "минимум рекламы в ₽ → решение 9",
+      "параметры схем B/C/D → решение 18",
+      "допустимые источники → решение 19"
+    ]
+  },
   "concerns": [],
   "reviewers": {
-    "manifestSpec": null,
-    "craft": null
+    "manifestSpec": "rev-ms",
+    "craft": "rev-craft"
   },
   "blind": null
 }

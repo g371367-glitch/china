@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>База знаний</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <!-- marked v12.0.2, локальная копия (без CDN) -->
+  <script src="/vendor/marked-12.0.2.min.js"></script>
+  <script type="module" src="/js/app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <button id="menu-toggle" class="menu-toggle" type="button" aria-controls="sidebar" aria-expanded="false">☰ Меню</button>
+    <a class="brand" href="#/">База знаний</a>
+  </header>
+  <div class="layout">
+    <aside id="sidebar" class="sidebar">
+      <form id="search-form" class="search" role="search">
+        <input name="q" type="search" placeholder="Поиск по заметкам" aria-label="Поиск по заметкам" autocomplete="off">
+        <button type="submit">Найти</button>
+      </form>
+      <nav id="nav-sections" class="nav-sections" aria-label="Разделы"></nav>
+      <nav id="nav-docs" class="nav-docs" aria-label="Заметки"><p class="muted">Загрузка…</p></nav>
+    </aside>
+    <div id="scrim" class="scrim"></div>
+    <main id="main" class="main" tabindex="-1"></main>
+  </div>
+</body>
+</html>

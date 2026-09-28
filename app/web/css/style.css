@@ -1,0 +1,119 @@
+/* Строго и без лишнего. Светлая/тёмная тема — по системе. */
+
+:root {
+  --bg: #ffffff;
+  --bg-soft: #f5f6f8;
+  --fg: #1d2024;
+  --muted: #646b75;
+  --line: #dde1e6;
+  --accent: #1f5fbf;
+  --accent-soft: #e6eefb;
+  --mark: #ffe58a;
+  --error: #b3261e;
+  --sidebar-w: 290px;
+  --radius: 6px;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  line-height: 1.55;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16181c;
+    --bg-soft: #1f2227;
+    --fg: #e4e6ea;
+    --muted: #9aa1ab;
+    --line: #33373e;
+    --accent: #7fb0ff;
+    --accent-soft: #23324a;
+    --mark: #6b5a12;
+    --error: #ff8a80;
+  }
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--fg); overflow-x: hidden; }
+a { color: var(--accent); }
+.muted { color: var(--muted); }
+.small { font-size: 0.85em; }
+.error { color: var(--error); }
+mark { background: var(--mark); color: inherit; padding: 0 1px; border-radius: 2px; }
+
+/* ---------- каркас ---------- */
+
+.topbar { display: none; }
+.layout { display: grid; grid-template-columns: var(--sidebar-w) minmax(0, 1fr); min-height: 100vh; }
+.sidebar {
+  position: sticky; top: 0; height: 100vh; overflow-y: auto;
+  background: var(--bg-soft); border-right: 1px solid var(--line); padding: 16px 12px 32px;
+}
+.main { padding: 24px 40px 64px; max-width: 980px; min-width: 0; outline: none; }
+.scrim { display: none; }
+
+.search { display: flex; gap: 6px; margin-bottom: 14px; }
+.search input {
+  flex: 1; min-width: 0; padding: 7px 9px; font: inherit; color: var(--fg);
+  background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius);
+}
+.search button, .menu-toggle {
+  padding: 7px 11px; font: inherit; color: var(--fg); cursor: pointer;
+  background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius);
+}
+.search button:hover, .menu-toggle:hover { border-color: var(--accent); }
+
+.nav-sections { display: flex; flex-direction: column; gap: 2px; padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid var(--line); }
+.sidebar a { display: block; padding: 4px 8px; border-radius: var(--radius); color: var(--fg); text-decoration: none; }
+.sidebar a:hover { background: var(--accent-soft); }
+.sidebar a.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.nav-docs details { margin-bottom: 8px; }
+.nav-docs summary { cursor: pointer; font-size: 0.8em; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted); padding: 4px 8px; }
+.nav-docs a { font-size: 0.93em; padding-left: 16px; }
+
+/* ---------- содержимое ---------- */
+
+.main h1 { font-size: 1.6em; line-height: 1.25; margin: 0.2em 0 0.6em; }
+.crumbs { font-size: 0.88em; color: var(--muted); margin-bottom: 12px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+.card { border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 16px; }
+.card h2 { font-size: 1.05em; margin: 0.2em 0 0.5em; }
+.card ul { margin: 0; padding-left: 1.1em; }
+
+.markdown { overflow-wrap: anywhere; }
+.markdown h1, .markdown h2, .markdown h3 { scroll-margin-top: 16px; line-height: 1.3; }
+.markdown h2 { margin-top: 1.6em; padding-bottom: 0.2em; border-bottom: 1px solid var(--line); }
+.markdown img { max-width: 100%; }
+.markdown pre { overflow-x: auto; background: var(--bg-soft); padding: 10px 12px; border-radius: var(--radius); }
+.markdown code { font-family: ui-monospace, Consolas, monospace; font-size: 0.92em; }
+.markdown :not(pre) > code { background: var(--bg-soft); padding: 1px 4px; border-radius: 4px; }
+.markdown blockquote { margin: 1em 0; padding: 4px 14px; border-left: 3px solid var(--line); color: var(--muted); }
+.markdown hr { border: 0; border-top: 1px solid var(--line); }
+.table-wrap { overflow-x: auto; margin: 1em 0; }
+.table-wrap table { border-collapse: collapse; min-width: 100%; }
+.table-wrap th, .table-wrap td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; overflow-wrap: normal; }
+.table-wrap th { background: var(--bg-soft); }
+.dead-link { color: var(--muted); text-decoration: line-through dotted; cursor: not-allowed; }
+
+.results { padding-left: 1.3em; }
+.results li { margin-bottom: 18px; }
+.result-title { font-weight: 600; margin-right: 8px; }
+.snippet { margin: 4px 0; overflow-wrap: anywhere; }
+.snippet .line { color: var(--muted); font-size: 0.8em; margin-right: 4px; }
+
+/* ---------- телефон ---------- */
+
+@media (max-width: 760px) {
+  .topbar {
+    display: flex; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 30;
+    padding: 8px 16px; background: var(--bg-soft); border-bottom: 1px solid var(--line);
+  }
+  .brand { color: var(--fg); font-weight: 600; text-decoration: none; }
+  .layout { display: block; }
+  .sidebar {
+    position: fixed; top: 0; left: 0; bottom: 0; z-index: 40; width: min(86vw, 320px); height: auto;
+    transform: translateX(-100%); transition: transform 0.2s ease; box-shadow: none;
+  }
+  .menu-open .sidebar { transform: none; box-shadow: 0 0 24px rgba(0, 0, 0, 0.3); }
+  .menu-open .scrim { display: block; position: fixed; inset: 0; z-index: 35; background: rgba(0, 0, 0, 0.35); }
+  .main { padding: 16px 16px 48px; }
+  .main h1 { font-size: 1.35em; }
+}
