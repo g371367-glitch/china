@@ -11,7 +11,7 @@ window.STATE =
   "memoryFile": "CLAUDE.md",
   "skillDir": "C:/Users/P famly/.claude/skills/autopilot",
   "startedAt": "2026-09-28T19:36:47+03:00",
-  "updatedAt": "2026-09-28T20:33:39+03:00",
+  "updatedAt": "2026-09-28T20:34:03+03:00",
   "finishedAt": null,
   "stages": [
     {
@@ -50,13 +50,13 @@ window.STATE =
       "id": "build",
       "status": "active",
       "startedAt": "2026-09-28T19:58:32+03:00",
-      "note": "2 из 5 тасков готовы"
+      "note": "3 из 5 тасков готовы"
     },
     {
       "id": "review",
       "status": "active",
       "startedAt": "2026-09-28T20:08:05+03:00",
-      "note": "03 на ревью, 04 в ремонте"
+      "note": "проверено 3 из 5; 03 в ремонте"
     },
     {
       "id": "final",
@@ -181,13 +181,24 @@ window.STATE =
         "README.md",
         "Журнал_изменений.md"
       ],
-      "status": "repair",
+      "status": "done",
       "retries": 0,
       "repairs": 1,
       "handoffs": 0,
       "startedAt": "2026-09-28T20:22:44+03:00",
       "repairFindings": [
         "Бразилия: вычет $20/$30 сверить с процитированной страницей Receita, расхождение упомянуть"
+      ],
+      "finishedAt": "2026-09-28T20:34:03+03:00",
+      "commit": "422f419",
+      "tests": {
+        "passed": 1,
+        "failed": 0
+      },
+      "files": [
+        "заметки (9 файлов)",
+        "README.md",
+        "Журнал_изменений.md"
       ]
     },
     {
@@ -259,7 +270,10 @@ window.STATE =
     "T03 три словаря названий строк + ORDER; схемы A–D объявлены дважды; два разборщика чисел",
     "T03 style.css .small продублирован",
     "T03 tariffs.js — «моя правка (из кабинета)» утверждает происхождение",
-    "T03 tests/index.js — import без await/catch"
+    "T03 tests/index.js — import без await/catch",
+    "T04 Бразилия: вычет $20/$30 — официальная страница недоступна, расхождение записано с вопросом",
+    "T04 апостиль подтверждён hcch.net (вне списка решения 19, но официальный)",
+    "T04 вопросы адресованы также консультанту/менеджерам площадок, не только бухгалтеру/агенту/Ozon"
   ],
   "reviewers": {
     "manifestSpec": "rev-ms",

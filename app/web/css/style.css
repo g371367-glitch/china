@@ -117,3 +117,57 @@ mark { background: var(--mark); color: inherit; padding: 0 1px; border-radius: 2
   .main { padding: 16px 16px 48px; }
   .main h1 { font-size: 1.35em; }
 }
+
+/* ---------- калькулятор и тарифы (таск 03) ---------- */
+
+.small { font-size: 0.85em; }
+.calc-box { margin: 0 0 28px; }
+.calc-box h2 { font-size: 1.1em; margin: 0 0 10px; }
+.calc-form { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: flex-start; }
+.calc-form .fld { display: flex; flex-direction: column; gap: 4px; min-width: 150px; max-width: 260px; flex: 1 1 160px; border: 0; padding: 0; margin: 0; }
+.calc-form .fld > span, .calc-form legend, .calc-form label > span { font-size: 0.9em; color: var(--muted); }
+.calc-form input, .calc-form select, .inline-edit input {
+  font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 8px; min-width: 0;
+}
+.calc-form input:focus, .calc-form select:focus, .inline-edit input:focus { outline: 2px solid var(--accent); outline-offset: 0; border-color: var(--accent); }
+.calc-form button, .tariffs button, .inline-edit button, .seg button {
+  font: inherit; color: var(--fg); background: var(--bg-soft); border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 10px; cursor: pointer;
+}
+.calc-form button:hover, .tariffs button:hover, .inline-edit button:hover, .seg button:hover { border-color: var(--accent); }
+.calc-form .dims { flex-direction: row; flex-wrap: wrap; }
+.calc-form .dims legend { width: 100%; margin-bottom: 4px; padding: 0; }
+.calc-form .dims input { width: 4.2em; flex: 1 1 0; }
+.calc-form .check { flex-direction: row; align-items: center; align-self: flex-end; min-width: 0; }
+.price-row { display: flex; gap: 6px; }
+.price-row input { flex: 1 1 auto; width: 100%; }
+.seg { display: inline-flex; }
+.seg button { border-radius: 0; min-width: 2.4em; }
+.seg button:first-child { border-radius: var(--radius) 0 0 var(--radius); }
+.seg button:last-child { border-radius: 0 var(--radius) var(--radius) 0; border-left: 0; }
+.seg button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+input.invalid, .calc-form input[aria-invalid="true"] { border-color: var(--error); outline-color: var(--error); }
+.field-error { color: var(--error); font-size: 0.85em; }
+.notice { padding: 8px 12px; border-radius: var(--radius); background: var(--accent-soft); }
+.notice.incomplete { background: var(--mark); color: var(--fg); }
+.calc-table { font-size: 0.95em; }
+.calc-table th[scope="row"] { font-weight: normal; white-space: nowrap; }
+.calc-table td.num { text-align: right; white-space: nowrap; }
+.calc-table .rub { color: var(--muted); font-size: 0.85em; }
+.calc-table .best { background: var(--accent-soft); }
+.calc-table .best-mark { font-size: 0.8em; font-weight: normal; color: var(--accent); }
+.calc-table tr.total th, .calc-table tr.total td { border-top-width: 2px; }
+.calc-table tr.profit td { font-size: 1.05em; }
+.calc-table .loss { color: var(--error); }
+.calc-table td.miss, .nodata { color: var(--error); }
+.src-tip { cursor: help; color: var(--accent); font-size: 0.9em; }
+.src-tip.stale { color: var(--error); }
+.badge { display: inline-block; font-size: 0.78em; padding: 1px 6px; border-radius: 10px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.badge.own { border-color: var(--accent); color: var(--accent); }
+.badge.stale { border-color: var(--error); color: var(--error); }
+.tariffs td.actions { white-space: nowrap; }
+.tariffs td.actions button { margin: 2px 0; }
+.inline-edit input { width: 7em; }
+@media (max-width: 760px) {
+  .calc-form .fld { max-width: none; flex-basis: 100%; }
+  .tariffs td.actions { white-space: normal; }
+}

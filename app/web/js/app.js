@@ -16,9 +16,9 @@ export const ROUTES = [
   { path: '',          menu: 'Главная',     title: 'База знаний',   view: () => import('./views/docs.js').then((m) => m.renderHome) },
   { path: 'doc/*',                          title: 'Заметка',       view: () => import('./views/docs.js').then((m) => m.renderDoc) },
   { path: 'search',                         title: 'Поиск',         view: () => import('./views/search.js').then((m) => m.renderSearch) },
-  { path: 'calc',      menu: 'Калькулятор', title: 'Калькулятор',   view: stub('Калькулятор') },
+  { path: 'calc',      menu: 'Калькулятор', title: 'Калькулятор',   view: () => import('./views/calc.js').then((m) => m.render) },
   { path: 'products',  menu: 'Мои товары',  title: 'Мои товары',    view: stub('Мои товары') },
-  { path: 'tariffs',   menu: 'Тарифы',      title: 'Тарифы',        view: stub('Тарифы') },
+  { path: 'tariffs',   menu: 'Тарифы',      title: 'Тарифы',        view: () => import('./views/tariffs.js').then((m) => m.render) },
   // alias — только пункт меню, ведущий на другой маршрут; для заметки показывается, если она есть.
   { path: 'doc/Журнал_изменений.md', menu: 'Что изменилось', alias: true },
 ];

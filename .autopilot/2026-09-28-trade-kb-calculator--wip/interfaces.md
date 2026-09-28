@@ -69,3 +69,4 @@ _(дополняется по мере сдачи тасков)_
 - `app/web/js/views/calc.js`: `getCalcState() → null | {input, priceCurrency, scheme (лучшая), results:{A,B,C,D,best}, settings, tariffsChecked}`; `setCalcInput(input)` — заполняет форму при следующем открытии `#/calc`.
 - `app/web/js/views/tariffs.js`: `loadTariffs() → {defaults, overrides, tariffs}`; `isStale(checked)`, `sourceHtml(src)`, `leafTip(line)`, `SCHEME_NAMES`, `STALE_DAYS`, `today()`.
 - Тесты JS: `node --test app/tests/` — через `app/tests/index.js`, который подхватывает все `*.test.mjs` в папке (Node 24 иначе считает папку модулем). Новые тесты — просто `*.test.mjs` рядом.
+- (ремонт T03) `compareSchemes → {A,B,C,D,best,incomplete:[keys],comparable:boolean}`; `getCalcState()` добавляет `incomplete:boolean, comparable:boolean` — при `incomplete:true` схема не готовый вывод, и список товаров обязан показывать ту же оговорку «неполный».
