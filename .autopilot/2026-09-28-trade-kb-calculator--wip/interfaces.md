@@ -52,3 +52,11 @@ _(дополняется по мере сдачи тасков)_
 - Маршруты: `#/` (сейчас `renderHome` из `views/docs.js`; таск 05 заменяет запись в ROUTES), `#/doc/<путь>[?q=|?a=якорь]`, `#/search?q=`, заглушки `#/calc`, `#/tariffs`, `#/products`. Пункт меню «Что изменилось» появляется сам, когда существует `Журнал_изменений.md`.
 - Стили — `app/web/css/style.css`; широкие таблицы оборачиваются в `.table-wrap`.
 - Тесты сервера: `python -m unittest discover -s app/tests` (24 теста).
+
+### Из таска 02 — тарифы
+
+- `data/tariffs.default.json` — по схеме; у каждого листа `unit` ∈ CNY, RUB, EUR, share, cm3/kg (perGram — CNY или RUB, «за грамм» по имени поля). Порядок ключей листа: value, unit, [bands], source, checked, note.
+- Категории: `home, kitchen, storage, textile, household, decor, hobby, stationery, accessories, toys, pets, sport, auto` + поле `ozonCategory`. Все rfbs/fbp — числа (share, сторонний источник China Consult, 07.2026), `bands` ни у одной нет (потолок 12/11% для цены до 1 500 ₽ выше всех ставок).
+- Логистика: `ogl-extra-small, ogl-other, cel-standard, gbs-super-express, gbs-standard, gbs-economy, china-post` — **все fixed/perGram = null** (действующих данных нет), сроки OGL «10–15», CEL «8–13». Калькулятор обязан корректно показывать «расчёт неполный: нет данных по логистике», пока пользователь не впишет свои.
+- fees: acquiring 0.015 share, adsPerOrder 0.05, returnsReserve 0.04, adsMinRub 5 RUB, volumetricDivisor 6000 cm3/kg, dutyFreeLimit 200 EUR.
+- Заметка `Азия/Китай/05_Тарифы_Ozon_Global.md` — человекочитаемая копия; ключ строки = путь листа (`cat.home.rfbs`, `fees.dutyFreeLimit`, `schemes.A.agentFee`). Вопросы в поддержку Ozon — раздел 6 заметки.

@@ -11,7 +11,7 @@ window.STATE =
   "memoryFile": "CLAUDE.md",
   "skillDir": "C:/Users/P famly/.claude/skills/autopilot",
   "startedAt": "2026-09-28T19:36:47+03:00",
-  "updatedAt": "2026-09-28T20:14:42+03:00",
+  "updatedAt": "2026-09-28T20:21:23+03:00",
   "finishedAt": null,
   "stages": [
     {
@@ -50,13 +50,13 @@ window.STATE =
       "id": "build",
       "status": "active",
       "startedAt": "2026-09-28T19:58:32+03:00",
-      "note": "0 из 5 тасков готовы"
+      "note": "1 из 5 тасков готов"
     },
     {
       "id": "review",
       "status": "active",
       "startedAt": "2026-09-28T20:08:05+03:00",
-      "note": "01 на ревью, 02 в ремонте"
+      "note": "проверено 1 из 5; 02 в ремонте"
     },
     {
       "id": "final",
@@ -88,11 +88,22 @@ window.STATE =
         "app/web/ (каркас)",
         "Запустить.bat"
       ],
-      "status": "review",
+      "status": "done",
       "retries": 0,
       "repairs": 0,
       "handoffs": 0,
-      "startedAt": "2026-09-28T19:58:32+03:00"
+      "startedAt": "2026-09-28T19:58:32+03:00",
+      "finishedAt": "2026-09-28T20:16:15+03:00",
+      "tests": {
+        "passed": 24,
+        "failed": 0
+      },
+      "commit": "d5c45b3",
+      "files": [
+        "app/server.py",
+        "app/web/",
+        "Запустить.bat"
+      ]
     },
     {
       "id": "02",
@@ -110,12 +121,13 @@ window.STATE =
       ],
       "status": "repair",
       "retries": 0,
-      "repairs": 1,
+      "repairs": 2,
       "handoffs": 0,
       "startedAt": "2026-09-28T19:58:32+03:00",
       "repairFindings": [
         "R02: комиссии и логистика все null — нужен действующий источник 2025-12+/2026 или явный отказ",
-        "D01: нет unit у листьев (RUB/EUR/share), нет bands в заметке"
+        "D01: нет unit у листьев (RUB/EUR/share), нет bands в заметке",
+        "OGL 2,79+0,0242 с сомнительной валютой → null; perGram unit CNY/RUB без /g"
       ]
     },
     {
@@ -135,10 +147,11 @@ window.STATE =
         "app/web/js/calc.js",
         "views/calc, views/tariffs"
       ],
-      "status": "pending",
+      "status": "in-progress",
       "retries": 0,
       "repairs": 0,
-      "handoffs": 0
+      "handoffs": 0,
+      "startedAt": "2026-09-28T20:16:15+03:00"
     },
     {
       "id": "04",
@@ -210,7 +223,14 @@ window.STATE =
       "допустимые источники → решение 19"
     ]
   },
-  "concerns": [],
+  "concerns": [
+    "T01 test_server.py:243 — тест курса лезет во внутренность обработчика вместо make_server(rate_url=)",
+    "T01 docs.js/search.js — norm и подсветка продублированы, папка из пути в двух местах",
+    "T01 docs.js:160 — HTML из marked вставляется без очистки (заметки свои — решить осознанно)",
+    "T01 server.py:284 — проверка порта без SO_EXCLUSIVEADDRUSE на Windows",
+    "T01 поиск — во фрагментах сырой markdown",
+    "T01 375px — не проверено в браузере, body overflow-x:hidden может прятать переполнение"
+  ],
   "reviewers": {
     "manifestSpec": "rev-ms",
     "craft": "rev-craft"
