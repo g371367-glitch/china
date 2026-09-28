@@ -11,7 +11,7 @@ window.STATE =
   "memoryFile": "CLAUDE.md",
   "skillDir": "C:/Users/P famly/.claude/skills/autopilot",
   "startedAt": "2026-09-28T19:36:47+03:00",
-  "updatedAt": "2026-09-28T20:21:23+03:00",
+  "updatedAt": "2026-09-28T20:33:39+03:00",
   "finishedAt": null,
   "stages": [
     {
@@ -50,13 +50,13 @@ window.STATE =
       "id": "build",
       "status": "active",
       "startedAt": "2026-09-28T19:58:32+03:00",
-      "note": "1 из 5 тасков готов"
+      "note": "2 из 5 тасков готовы"
     },
     {
       "id": "review",
       "status": "active",
       "startedAt": "2026-09-28T20:08:05+03:00",
-      "note": "проверено 1 из 5; 02 в ремонте"
+      "note": "03 на ревью, 04 в ремонте"
     },
     {
       "id": "final",
@@ -119,7 +119,7 @@ window.STATE =
         "Азия/Китай/05_*",
         "data/tariffs.default.json"
       ],
-      "status": "repair",
+      "status": "done",
       "retries": 0,
       "repairs": 2,
       "handoffs": 0,
@@ -128,6 +128,16 @@ window.STATE =
         "R02: комиссии и логистика все null — нужен действующий источник 2025-12+/2026 или явный отказ",
         "D01: нет unit у листьев (RUB/EUR/share), нет bands в заметке",
         "OGL 2,79+0,0242 с сомнительной валютой → null; perGram unit CNY/RUB без /g"
+      ],
+      "finishedAt": "2026-09-28T20:22:44+03:00",
+      "commit": "7507df5",
+      "tests": {
+        "passed": 1,
+        "failed": 0
+      },
+      "files": [
+        "data/tariffs.default.json",
+        "Азия/Китай/05_Тарифы_Ozon_Global.md"
       ]
     },
     {
@@ -147,11 +157,14 @@ window.STATE =
         "app/web/js/calc.js",
         "views/calc, views/tariffs"
       ],
-      "status": "in-progress",
+      "status": "repair",
       "retries": 0,
-      "repairs": 0,
+      "repairs": 1,
       "handoffs": 0,
-      "startedAt": "2026-09-28T20:16:15+03:00"
+      "startedAt": "2026-09-28T20:16:15+03:00",
+      "repairFindings": [
+        "решение 11: «лучшая» и цены под маржу без пометки «неполный» — D выигрывает за счёт null=0"
+      ]
     },
     {
       "id": "04",
@@ -168,10 +181,14 @@ window.STATE =
         "README.md",
         "Журнал_изменений.md"
       ],
-      "status": "pending",
+      "status": "repair",
       "retries": 0,
-      "repairs": 0,
-      "handoffs": 0
+      "repairs": 1,
+      "handoffs": 0,
+      "startedAt": "2026-09-28T20:22:44+03:00",
+      "repairFindings": [
+        "Бразилия: вычет $20/$30 сверить с процитированной страницей Receita, расхождение упомянуть"
+      ]
     },
     {
       "id": "05",
@@ -199,14 +216,15 @@ window.STATE =
   ],
   "singlePass": null,
   "tests": {
-    "passed": 24,
+    "passed": 41,
     "failed": 0
   },
   "debt": {
     "placeholders": [
       "Дата регистрации компании — впишете на главной",
       "Тарифы без открытых данных — впишете из кабинета Ozon",
-      "Ставки своего агента и склада FBP — ориентиры из заметок"
+      "Ставки своего агента и склада FBP — ориентиры из заметок",
+      "Логистика OGL/CEL/GBS/China Post — действующих тарифов в открытых источниках нет, впишете из кабинета"
     ],
     "assumptions": [],
     "emptyEnv": []
@@ -229,11 +247,24 @@ window.STATE =
     "T01 docs.js:160 — HTML из marked вставляется без очистки (заметки свои — решить осознанно)",
     "T01 server.py:284 — проверка порта без SO_EXCLUSIVEADDRUSE на Windows",
     "T01 поиск — во фрагментах сырой markdown",
-    "T01 375px — не проверено в браузере, body overflow-x:hidden может прятать переполнение"
+    "T01 375px — не проверено в браузере, body overflow-x:hidden может прятать переполнение",
+    "T02 комиссии — сторонний источник (China Consult, 07.2026), не официальная справка Ozon",
+    "T02 сопоставление категорий Ozon сделано без доступа к официальному справочнику",
+    "T03 views/calc.js:323 — цена под маржу при null-логистике без пометки «неполный» в ячейке",
+    "T03 views/calc.js:289 — null-тариф показан как «0,00 ¥», у «лучшей» нет пометки неполного расчёта",
+    "T03 calc.test.mjs — нет теста incomplete у priceForMargin/breakeven/compareSchemes при всей логистике null",
+    "T03 calc.js:243 — percentShare дублирует удержания computeUnit",
+    "T03 подписи налоговых режимов захардкожены",
+    "T03 eurRate нигде не задаётся — предупреждение dutyFree не срабатывает",
+    "T03 три словаря названий строк + ORDER; схемы A–D объявлены дважды; два разборщика чисел",
+    "T03 style.css .small продублирован",
+    "T03 tariffs.js — «моя правка (из кабинета)» утверждает происхождение",
+    "T03 tests/index.js — import без await/catch"
   ],
   "reviewers": {
     "manifestSpec": "rev-ms",
-    "craft": "rev-craft"
+    "craft": "rev-craft",
+    "manifestSpec2": "rev-ms2"
   },
   "blind": null
 }

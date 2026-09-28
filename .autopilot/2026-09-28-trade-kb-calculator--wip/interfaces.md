@@ -60,3 +60,12 @@ _(дополняется по мере сдачи тасков)_
 - Логистика: `ogl-extra-small, ogl-other, cel-standard, gbs-super-express, gbs-standard, gbs-economy, china-post` — **все fixed/perGram = null** (действующих данных нет), сроки OGL «10–15», CEL «8–13». Калькулятор обязан корректно показывать «расчёт неполный: нет данных по логистике», пока пользователь не впишет свои.
 - fees: acquiring 0.015 share, adsPerOrder 0.05, returnsReserve 0.04, adsMinRub 5 RUB, volumetricDivisor 6000 cm3/kg, dutyFreeLimit 200 EUR.
 - Заметка `Азия/Китай/05_Тарифы_Ozon_Global.md` — человекочитаемая копия; ключ строки = путь листа (`cat.home.rfbs`, `fees.dutyFreeLimit`, `schemes.A.agentFee`). Вопросы в поддержку Ozon — раздел 6 заметки.
+
+### Из таска 03 — калькулятор
+
+- `app/web/js/calc.js` — ровно шесть функций из «Границ». `computeUnit` дополнительно возвращает `warnings: ['dutyFree']`; каждая строка `{key,label,cny, source?, checked?, note?, own?}`. `priceForMargin`/`breakeven` → `{price, margin, incomplete}` | `{unreachable:true, reason}`. `mergeTariffs`: массивы сливаются по `id`, переопределённый лист заменяется целиком и получает `own:true`.
+- input: `{purchase ¥, weight г, dims?:{l,w,h} см, category, logistics, price ¥, noAds?}`.
+- `data/settings.json`: `{rate ₽/¥, rateDate, rateSource:'cbr'|'manual', conversionReserve (share), taxMode:'simplified'|'regular'|'custom', taxCustomRate (share)}` — сохранять слиянием с текущим файлом (не затирать чужие поля, напр. дату регистрации компании).
+- `app/web/js/views/calc.js`: `getCalcState() → null | {input, priceCurrency, scheme (лучшая), results:{A,B,C,D,best}, settings, tariffsChecked}`; `setCalcInput(input)` — заполняет форму при следующем открытии `#/calc`.
+- `app/web/js/views/tariffs.js`: `loadTariffs() → {defaults, overrides, tariffs}`; `isStale(checked)`, `sourceHtml(src)`, `leafTip(line)`, `SCHEME_NAMES`, `STALE_DAYS`, `today()`.
+- Тесты JS: `node --test app/tests/` — через `app/tests/index.js`, который подхватывает все `*.test.mjs` в папке (Node 24 иначе считает папку модулем). Новые тесты — просто `*.test.mjs` рядом.
