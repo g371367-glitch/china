@@ -252,6 +252,17 @@ class Rate(ServerCase):
         self.use_rate_url(f"http://127.0.0.1:{fake.server_address[1]}/daily_json.js")
         self.assertEqual(self.get_json("/api/rate"), {"rate": 11.55, "date": "2026-09-27", "source": "cbr"})
 
+    def test_eur_rate_comes_from_the_same_answer(self):
+        # образец ответа ЦБ: EUR — 1 € = 95,1234 ₽, CNY — 10 ¥ = 115,5 ₽
+        fake = FakeCbr({"Date": "2026-09-27T11:30:00+03:00",
+                        "Valute": {"EUR": {"CharCode": "EUR", "Nominal": 1, "Value": 95.1234},
+                                   "CNY": {"CharCode": "CNY", "Nominal": 10, "Value": 115.5}}})
+        self.addCleanup(fake.server_close)
+        self.addCleanup(fake.shutdown)
+        self.use_rate_url(f"http://127.0.0.1:{fake.server_address[1]}/daily_json.js")
+        self.assertEqual(self.get_json("/api/rate"),
+                         {"rate": 11.55, "eurRate": 95.1234, "date": "2026-09-27", "source": "cbr"})
+
     def test_network_error_gives_502_quickly(self):
         with socket.socket() as s:  # порт, на котором никто не слушает
             s.bind(("127.0.0.1", 0))

@@ -7,7 +7,7 @@
 // input: { purchase ¥, weight г, dims?: {l,w,h} см, category id, logistics id, price ¥, noAds? }
 // Тарифный лист: {value, source, checked, note?, unit?, bands?}; value:null — нет данных → ключ в incomplete, в сумму идёт 0.
 
-const SCHEMES = ['A', 'B', 'C', 'D'];
+import { SCHEMES, LINE_LABELS as LABELS } from './shared.js';
 
 const CURRENCIES = new Set(['CNY', 'RUB', 'EUR']);
 const isNum = (x) => typeof x === 'number' && Number.isFinite(x);
@@ -62,22 +62,6 @@ function srcOf(leaf) {
   return o;
 }
 
-const LABELS = {
-  purchase: 'Закупка',
-  cnDelivery: 'Доставка по Китаю',
-  agentFee: 'Работа агента',
-  supplierPackFee: 'Упаковка поставщиком',
-  inbound: 'Доставка партии, на единицу',
-  storage: 'Хранение, на единицу',
-  fbpHandling: 'Сборка/хранение FBP',
-  logistics: 'Международная логистика',
-  commission: 'Комиссия Ozon',
-  ads: 'Реклама «оплата за заказ»',
-  acquiring: 'Эквайринг и конвертация',
-  returns: 'Резерв на возвраты/брак',
-  tax: 'Налог',
-};
-
 // Строки, которые входят в «вложенное» для ROI (решение 9).
 const INVESTED = new Set(['purchase', 'cnDelivery', 'agentFee', 'supplierPackFee', 'inbound', 'storage', 'fbpHandling', 'logistics']);
 
@@ -121,8 +105,13 @@ function logisticsCost(input, tariffs, price, cx) {
     const k = cx.toCny(1, bc, 'logistics');
     return { cny: k === null ? 0 : (val(b.fixed) + val(b.perGram) * w) * k, src };
   }
-  const cny = cx.money(t.fixed, 'logistics') + cx.money(t.perGram, 'logistics') * w;
-  return { cny, src };
+  // Достаточно одного из полей: пустое второе считается 0 и показывается подсказкой (hint).
+  const hasFixed = val(t.fixed) !== null;
+  const hasGram = val(t.perGram) !== null;
+  if (!hasFixed && !hasGram) { cx.miss('logistics'); return { cny: 0, src }; }
+  const cny = (hasFixed ? cx.money(t.fixed, 'logistics') : 0) + (hasGram ? cx.money(t.perGram, 'logistics') * w : 0);
+  const hint = !hasGram ? 'цена за грамм не указана — считается 0' : !hasFixed ? 'фикс не указан — считается 0' : undefined;
+  return { cny, src, hint };
 }
 
 /** Ставка комиссии из листа: одиночное value или ступени bands по цене (D01). null — нет данных. */
@@ -202,7 +191,7 @@ export function computeUnit(input, scheme, tariffs, settings) {
   if ('fbpHandling' in sch) add('fbpHandling', cx.money(sch.fbpHandling, 'fbpHandling'), srcOf(sch.fbpHandling));
 
   const lg = logisticsCost(input, tariffs, price, cx);
-  add('logistics', lg.cny, lg.src);
+  add('logistics', lg.cny, lg.hint ? { ...lg.src, hint: lg.hint } : lg.src);
 
   const cm = commissionRate(input, scheme, tariffs, price, cx);
   add('commission', cm.rate * price, cm.src);
@@ -283,6 +272,23 @@ export function priceForMargin(targetMargin, input, scheme, tariffs, settings) {
   }
   const r = at(hi);
   return { price: hi, margin: r.margin, incomplete: r.incomplete };
+}
+
+/**
+ * Логистика по умолчанию («Авто»): самый дешёвый тариф с известными данными для этого товара, иначе первый.
+ * Один выбор для калькулятора и списка товаров. → {id, name, cny|null, known:boolean} | null (тарифов нет).
+ */
+export function defaultLogistics(input, tariffs, settings) {
+  const list = (tariffs && tariffs.logistics) || [];
+  let best = null;
+  for (const l of list) {
+    const r = computeUnit({ ...input, logistics: l.id }, 'A', tariffs, settings);
+    if (r.incomplete.includes('logistics')) continue;
+    const c = r.lines.find((x) => x.key === 'logistics').cny;
+    if (!best || c < best.cny) best = { id: l.id, name: l.name, cny: c, known: true };
+  }
+  if (best) return best;
+  return list[0] ? { id: list[0].id, name: list[0].name, cny: null, known: false } : null;
 }
 
 /** Цена безубыточности (маржа 0). → как priceForMargin. */

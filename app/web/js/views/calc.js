@@ -10,16 +10,10 @@
 
 import { api } from '../api.js';
 import { escapeHtml } from '../app.js';
-import { compareSchemes, computeUnit, priceForMargin, breakeven } from '../calc.js';
-import { loadTariffs, leafTip, isStale, SCHEME_NAMES, today } from './tariffs.js';
+import { compareSchemes, priceForMargin, breakeven, defaultLogistics } from '../calc.js';
+import { loadTariffs, leafTip, isStale, today } from './tariffs.js';
+import { SCHEMES, SCHEME_NAMES, LINE_ORDER, incompleteList, incompleteText, withSettingsDefaults, saveSettingsPatch, parseNum } from '../shared.js';
 import { upsertProduct } from './products.js';
-
-const SCHEMES = ['A', 'B', 'C', 'D'];
-const INCOMPLETE_NAMES = {
-  commission: 'комиссии категории', logistics: 'логистике', ads: 'рекламе', acquiring: 'эквайрингу', returns: 'возвратам',
-  tax: 'налогу', rate: 'курсу ₽/¥', eurRate: 'курсу евро', cnDelivery: 'доставке по Китаю', agentFee: 'работе агента',
-  supplierPackFee: 'упаковке поставщиком', inbound: 'доставке партии', storage: 'хранению', fbpHandling: 'сборке FBP', batchDiscount: 'скидке за партию',
-};
 
 let S = null;          // {tariffs, tariffsChecked, settings, el}
 let form = {           // значения полей как ввёл пользователь (строки) — переживают уход с экрана
@@ -56,19 +50,12 @@ const fmt = (x) => (Number.isFinite(x) ? x.toLocaleString('ru-RU', { minimumFrac
 const fmtPct = (x) => (Number.isFinite(x) ? (x * 100).toLocaleString('ru-RU', { maximumFractionDigits: 1 }) + '%' : '—');
 const rub = (cny) => (S.settings.rate > 0 ? fmt(cny * S.settings.rate) + ' ₽' : '— ₽');
 
-function parseNum(raw) {
-  const s = String(raw ?? '').trim().replace(/\s/g, '').replace(',', '.');
-  if (s === '') return { empty: true };
-  if (!/^-?\d*\.?\d+$/.test(s)) return { bad: true };
-  return { n: Number(s) };
-}
-
 // ---------- загрузка ----------
 
 export async function render(el) {
   el.innerHTML = '<h1>Калькулятор</h1><p class="muted">Загрузка тарифов…</p>';
   const [{ tariffs }, settings] = await Promise.all([loadTariffs(), api.data('settings')]);
-  S = { el, tariffs, tariffsChecked: tariffs.edited || tariffs.checked || '', settings: { conversionReserve: 0, taxMode: 'simplified', ...(settings || {}) } };
+  S = { el, tariffs, tariffsChecked: tariffs.edited || tariffs.checked || '', settings: withSettingsDefaults(settings) };
   draw();
   if (!(S.settings.rate > 0)) refreshRate(true);
 }
@@ -76,8 +63,7 @@ export async function render(el) {
 async function saveSettings(patch) {
   Object.assign(S.settings, patch);
   try {
-    const cur = (await api.data('settings')) || {};
-    await api.saveData('settings', { ...cur, ...patch });
+    await saveSettingsPatch(patch);
     return true;
   } catch (e) {
     setRateMsg(`<span class="error">Настройки не сохранились: ${escapeHtml(e.message)}</span>`);
@@ -94,8 +80,9 @@ async function refreshRate(auto = false) {
   setRateMsg('Запрашиваю курс ЦБ…');
   try {
     const r = await api.rate();
-    await saveSettings({ rate: r.rate, rateDate: r.date, rateSource: 'cbr' });
+    await saveSettings({ rate: r.rate, rateDate: r.date, rateSource: 'cbr', ...(r.eurRate > 0 ? { eurRate: r.eurRate } : {}) });
     S.el.querySelector('#f-rate').value = String(r.rate).replace('.', ',');
+    if (r.eurRate > 0) S.el.querySelector('#f-eur').value = String(r.eurRate).replace('.', ',');
     S.el.querySelector('#rate-date').textContent = `ЦБ, ${r.date}`;
     recalc();
     setRateMsg(`Курс ЦБ на ${escapeHtml(r.date)} сохранён.`);
@@ -128,6 +115,7 @@ function draw() {
       <h2>Курс и настройки</h2>
       <div class="calc-form">
         ${field('rate', 'Курс, ₽ за 1 ¥', st.rate > 0 ? String(st.rate).replace('.', ',') : '')}
+        ${field('eur', 'Курс, ₽ за 1 € (для беспошлинного лимита)', st.eurRate > 0 ? String(st.eurRate).replace('.', ',') : '')}
         <div class="fld"><span>&nbsp;</span><button type="button" id="rate-btn">Обновить по ЦБ</button><small class="muted" id="rate-date">${escapeHtml(rateDate)}</small></div>
         ${field('reserve', 'Запас на конвертацию, %', String((st.conversionReserve || 0) * 100).replace('.', ','))}
         <label class="fld" for="f-tax"><span>Налоговый режим</span>
@@ -249,23 +237,12 @@ function readInput() {
   return input;
 }
 
-/** Самый дешёвый тариф логистики с известными данными для этого веса/цены. */
-function cheapestLogistics(input) {
-  let best = null;
-  for (const l of S.tariffs.logistics || []) {
-    const r = computeUnit({ ...input, logistics: l.id }, 'A', S.tariffs, S.settings);
-    if (r.incomplete.includes('logistics')) continue;
-    const c = r.lines.find((x) => x.key === 'logistics').cny;
-    if (!best || c < best.cny) best = { id: l.id, name: l.name, cny: c };
-  }
-  return best;
-}
-
 // ---------- расчёт ----------
 
 function recalc() {
   // настройки: курс/запас/налог проверяются, но хранятся отдельно (сохранение — по change)
   const rateOk = !positive('rate', { optional: true }).error;
+  const eurOk = !positive('eur', { optional: true }).error;
   const resOk = !positive('reserve', { optional: true, allowZero: true, max: 100 }).error;
   const taxcOk = S.settings.taxMode !== 'custom' || !positive('taxc', { allowZero: true, max: 100 }).error;
   const out = S.el.querySelector('#calc-out');
@@ -277,7 +254,7 @@ function recalc() {
     po.textContent = p.n > 0 && S.settings.rate > 0
       ? (priceCurrency === 'CNY' ? `≈ ${fmt(p.n * S.settings.rate)} ₽` : `≈ ${fmt(p.n / S.settings.rate)} ¥`) : '';
   }
-  if (!input || !rateOk || !resOk || !taxcOk) {
+  if (!input || !rateOk || !eurOk || !resOk || !taxcOk) {
     lastState = null;
     out.innerHTML = '<p class="muted">Исправьте подсвеченные поля — тогда появится расчёт.</p>';
     tout.innerHTML = '';
@@ -285,9 +262,9 @@ function recalc() {
   }
   const autoEl = S.el.querySelector('#logi-auto');
   if (!input.logistics) {
-    const best = cheapestLogistics(input);
-    input.logistics = best ? best.id : (S.tariffs.logistics || [])[0]?.id || '';
-    autoEl.textContent = best ? `сейчас: ${best.name}` : 'нет данных ни по одному тарифу — впишите на странице «Тарифы»';
+    const pick = defaultLogistics(input, S.tariffs, S.settings);
+    input.logistics = pick ? pick.id : '';
+    autoEl.textContent = pick && pick.known ? `сейчас: ${pick.name}` : 'нет данных ни по одному тарифу — впишите на странице «Тарифы»';
   } else autoEl.textContent = '';
 
   const res = compareSchemes(input, S.tariffs, S.settings);
@@ -302,38 +279,41 @@ function tipIcon(line) {
   return ` <span class="src-tip${stale ? ' stale' : ''}" title="${escapeHtml(leafTip(line))}" tabindex="0" aria-label="${escapeHtml(leafTip(line))}">${stale ? '⚠' : 'ⓘ'}</span>`;
 }
 
-const incText = (keys) => 'неполный: нет данных по ' + keys.map((k) => escapeHtml(INCOMPLETE_NAMES[k] || k)).join(', ');
+const incText = (keys) => escapeHtml(incompleteText(keys));
 
-/** Справочная строка о беспошлинном лимите, пока курс EUR не задан (проверка не выполняется). */
-function dutyFreeRef() {
+/** Справочная строка о беспошлинном лимите: без курса EUR проверка не выполняется; с курсом — лимит в ¥. */
+function dutyFreeRef(warn) {
   const leaf = (S.tariffs.fees || {}).dutyFreeLimit;
   const v = leaf && typeof leaf === 'object' ? leaf.value : leaf;
-  if (v == null || S.settings.eurRate > 0) return '';
+  if (v == null || warn) return '';
   const cur = { RUB: '₽', CNY: '¥', EUR: '€' }[leaf?.unit] || '€';
-  return `<p class="muted small">Беспошлинный лимит посылки: ${escapeHtml(String(v).replace('.', ','))} ${cur} (проверка не выполняется — нет курса EUR)</p>`;
+  const limit = `${escapeHtml(String(v).replace('.', ','))} ${cur}`;
+  if (!(S.settings.eurRate > 0)) return `<p class="muted small">Беспошлинный лимит посылки: ${limit} (проверка не выполняется — нет курса EUR; впишите его в «Курс и настройки»)</p>`;
+  const cny = S.settings.rate > 0 && cur === '€' ? ` ≈ ${fmt((v * S.settings.eurRate) / S.settings.rate)} ¥` : '';
+  return `<p class="muted small">Беспошлинный лимит посылки: ${limit}${cny} — цена в пределах лимита.</p>`;
 }
 
 function resultsHtml(res) {
   const keys = [];
   const labels = {};
   for (const s of SCHEMES) for (const l of res[s].lines) { if (!keys.includes(l.key)) keys.push(l.key); labels[l.key] ??= l.label; }
-  const ORDER = ['purchase', 'cnDelivery', 'agentFee', 'supplierPackFee', 'inbound', 'storage', 'fbpHandling', 'logistics', 'commission', 'ads', 'acquiring', 'returns', 'tax'];
-  keys.sort((a, b) => (ORDER.indexOf(a) + 1 || 99) - (ORDER.indexOf(b) + 1 || 99));
+  keys.sort((a, b) => (LINE_ORDER.indexOf(a) + 1 || 99) - (LINE_ORDER.indexOf(b) + 1 || 99));
   const cell = (s, key) => {
     const l = res[s].lines.find((x) => x.key === key);
     if (!l) return '<td class="num muted">—</td>';
     const miss = res[s].incomplete.includes(key);
     if (miss) return `<td class="num miss"><span class="nodata">нет данных</span>${tipIcon(l)}</td>`;
-    return `<td class="num">${fmt(l.cny)} ¥${tipIcon(l)}<div class="rub">${rub(l.cny)}</div></td>`;
+    const hint = l.hint ? `<div class="small muted">${escapeHtml(l.hint)}</div>` : '';
+    return `<td class="num">${fmt(l.cny)} ¥${tipIcon(l)}<div class="rub">${rub(l.cny)}</div>${hint}</td>`;
   };
   const total = (label, f, cls = '') => `<tr class="total ${cls}"><th scope="row">${label}</th>${SCHEMES.map((s) => `<td class="num${s === res.best ? ' best' : ''}">${f(res[s])}</td>`).join('')}</tr>`;
   const money = (x) => `${fmt(x)} ¥<div class="rub">${rub(x)}</div>`;
   const incomplete = [...new Set(SCHEMES.flatMap((s) => res[s].incomplete))];
   const warn = SCHEMES.some((s) => res[s].warnings.includes('dutyFree'));
   return `
-    ${incomplete.length ? `<p class="notice incomplete">Расчёт неполный: нет данных по ${incomplete.map((k) => escapeHtml(INCOMPLETE_NAMES[k] || k)).join(', ')}. Впишите цифры на странице <a href="#/tariffs">«Тарифы»</a> — пока они считаются как 0.</p>` : ''}
+    ${incomplete.length ? `<p class="notice incomplete">Расчёт неполный: нет данных по ${escapeHtml(incompleteList(incomplete))}. Впишите цифры на странице <a href="#/tariffs">«Тарифы»</a> — пока они считаются как 0.</p>` : ''}
     ${warn ? '<p class="notice">Цена выше беспошлинного лимита посылки — возможна пошлина.</p>' : ''}
-    ${dutyFreeRef()}
+    ${dutyFreeRef(warn)}
     <div class="table-wrap"><table class="calc-table">
       <thead><tr><th></th>${SCHEMES.map((s) => `<th scope="col" class="${s === res.best ? 'best' : ''}">${escapeHtml(SCHEME_NAMES[s])}${s === res.best ? `<div class="best-mark">лучшая по прибыли</div>${res.incomplete.length ? `<div class="small nodata">${incText(res.incomplete)}${res.comparable ? '' : ' — сравнение условно'}</div>` : ''}` : ''}</th>`).join('')}</tr></thead>
       <tbody>
@@ -412,6 +392,19 @@ function bind() {
     }
   });
   el.querySelector('#rate-btn').addEventListener('click', () => refreshRate());
+
+  const eurIn = el.querySelector('#f-eur');
+  eurIn.addEventListener('input', () => {
+    const p = parseNum(eurIn.value);
+    if (p.n > 0) S.settings.eurRate = p.n; else if (p.empty) delete S.settings.eurRate;
+    recalc();
+  });
+  eurIn.addEventListener('change', async () => {
+    const p = parseNum(eurIn.value);
+    if (p.empty) { if (await saveSettings({ eurRate: undefined })) setRateMsg('Курс евро убран — беспошлинный лимит не проверяется.'); return; }
+    if (!(p.n > 0)) return;
+    if (await saveSettings({ eurRate: p.n })) setRateMsg('Курс евро сохранён.');
+  });
 
   const resIn = el.querySelector('#f-reserve');
   resIn.addEventListener('input', () => { form.reserve = resIn.value; const p = parseNum(resIn.value); if (p.n >= 0 && p.n < 100) S.settings.conversionReserve = p.n / 100; else if (p.empty) S.settings.conversionReserve = 0; recalc(); });

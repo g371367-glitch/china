@@ -100,3 +100,13 @@ test('data/calendar.json — ровно строки сводного кален
   const r = upcoming(cal.events, '2026-09-29', { registrationDate: '2026-09-01' }, 100);
   assert.equal(r.length, cal.events.length, 'у каждого события есть будущая дата');
 });
+
+test('daysLeft согласован с soon на границе 30 дней, у заглушки регистрации — null', () => {
+  const r = upcoming([
+    ev('a', { type: 'once', date: '2026-10-29' }),
+    ev('b', { type: 'once', date: '2026-10-30' }),
+    ev('c', { type: 'once', date: '2026-09-29' }),
+    ev('reg', { type: 'afterRegistration', months: 1 }),
+  ], '2026-09-29', {}, 10);
+  assert.deepEqual(r.map((e) => [e.what, e.daysLeft, e.soon]), [['reg', null, false], ['c', 0, true], ['a', 30, true], ['b', 31, false]]);
+});

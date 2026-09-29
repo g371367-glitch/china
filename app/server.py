@@ -159,14 +159,21 @@ def write_data(root, name, value):
 # ---------- курс ЦБ ----------
 
 def fetch_rate(url=RATE_URL, timeout=RATE_TIMEOUT):
-    """{rate, date, source:"cbr"} — юаней в рублях за 1 ¥ (Value/Nominal)."""
+    """{rate, eurRate?, date, source:"cbr"} — рублей за 1 ¥ и за 1 € (Value/Nominal); eurRate — если EUR есть в ответе."""
     req = urllib.request.Request(url, headers={"User-Agent": f"{APP_NAME}/{VERSION}"})
     local = urllib.parse.urlsplit(url).hostname in ("127.0.0.1", "localhost")
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({})) if local else urllib.request.build_opener()
     with opener.open(req, timeout=timeout) as r:
         data = json.loads(r.read().decode("utf-8"))
     cny = data["Valute"]["CNY"]
-    return {"rate": round(cny["Value"] / cny["Nominal"], 4), "date": str(data.get("Date", ""))[:10], "source": "cbr"}
+    out = {"rate": round(cny["Value"] / cny["Nominal"], 4), "date": str(data.get("Date", ""))[:10], "source": "cbr"}
+    eur = data["Valute"].get("EUR")
+    try:
+        if eur and eur["Value"] > 0 and eur["Nominal"] > 0:
+            out["eurRate"] = round(eur["Value"] / eur["Nominal"], 4)
+    except (KeyError, TypeError):
+        pass  # без евро — только проверка беспошлинного лимита не выполнится
+    return out
 
 
 # ---------- HTTP ----------

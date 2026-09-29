@@ -8,10 +8,6 @@
 
 import { api } from './api.js';
 
-const stub = (title) => () => (el) => {
-  el.innerHTML = `<h1>${escapeHtml(title)}</h1><p class="muted">Раздел в разработке.</p>`;
-};
-
 export const ROUTES = [
   { path: '',          menu: 'Главная',     title: 'База знаний',   view: () => import('./views/home.js').then((m) => m.render) },
   { path: 'doc/*',                          title: 'Заметка',       view: () => import('./views/docs.js').then((m) => m.renderDoc) },

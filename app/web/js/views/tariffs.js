@@ -5,14 +5,10 @@
 import { api } from '../api.js';
 import { escapeHtml, docHash } from '../app.js';
 import { mergeTariffs } from '../calc.js';
+import { SCHEME_NAMES, parseNum } from '../shared.js';
 
 export const STALE_DAYS = 90;
-export const SCHEME_NAMES = {
-  A: 'A — агент в Иу (rFBS)',
-  B: 'B — поставщик сам (rFBS)',
-  C: 'C — мини-запас у агента (rFBS)',
-  D: 'D — FBP',
-};
+export { SCHEME_NAMES };
 
 const SHARE_KEYS = new Set(['rfbs', 'fbp', 'acquiring', 'adsPerOrder', 'returnsReserve', 'batchDiscount', 'base', 'rate']);
 const LEAF_NAMES = {
@@ -212,10 +208,10 @@ function draw(el, message = '') {
 }
 
 function parsePercentOrNumber(raw, isShare) {
-  const s = String(raw).trim().replace(',', '.').replace(/\s/g, '');
-  if (s === '') return { value: null };
-  const n = Number(s);
-  if (!Number.isFinite(n) || n < 0) return { error: 'Введите число не меньше 0 или оставьте пусто' };
+  const p = parseNum(raw);
+  if (p.empty) return { value: null };
+  const n = p.n;
+  if (p.bad || n < 0) return { error: 'Введите число не меньше 0 или оставьте пусто' };
   if (isShare && n >= 100) return { error: 'Процент должен быть меньше 100' };
   return { value: isShare ? n / 100 : n };
 }

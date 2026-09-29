@@ -6,18 +6,14 @@
 // Чистые функции (без DOM, тестируются в app/tests/products.test.mjs):
 //   upsertProduct(list, product, nowIso) → новый список (тот же id — обновление на месте, иначе добавление)
 //   computeRow(product, scheme, tariffs, settings) → {…product, scheme, price, cost, profit, margin, roi, incomplete}
+//     (логистика не выбрана → calc.defaultLogistics, как «Авто» в калькуляторе)
 //   toCsv(rows, {rate}) → строка CSV для русского Excel (BOM, «;», десятичная запятая, CRLF)
 // Модули с DOM (app.js, экраны) подгружаются только внутри render — чтобы файл импортировался в node.
 
-import { computeUnit } from '../calc.js';
+import { computeUnit, defaultLogistics } from '../calc.js';
+import { SCHEMES, SCHEME_NAMES, incompleteText, incompleteList, withSettingsDefaults, saveSettingsPatch } from '../shared.js';
 
-const SCHEMES = ['A', 'B', 'C', 'D'];
-const INCOMPLETE_NAMES = {
-  commission: 'комиссии категории', logistics: 'логистике', ads: 'рекламе', acquiring: 'эквайрингу', returns: 'возвратам',
-  tax: 'налогу', rate: 'курсу ₽/¥', eurRate: 'курсу евро', cnDelivery: 'доставке по Китаю', agentFee: 'работе агента',
-  supplierPackFee: 'упаковке поставщиком', inbound: 'доставке партии', storage: 'хранению', fbpHandling: 'сборке FBP', batchDiscount: 'скидке за партию',
-};
-export const incompleteText = (keys) => 'неполный: нет данных по ' + keys.map((k) => INCOMPLETE_NAMES[k] || k).join(', ');
+export { incompleteText };
 
 // ---------- чистые функции ----------
 
@@ -40,7 +36,7 @@ export function upsertProduct(list, product, nowIso = new Date().toISOString()) 
 
 export function computeRow(product, scheme, tariffs, settings) {
   const input = { ...(product.input || {}) };
-  if (!input.logistics) input.logistics = (tariffs.logistics || [])[0]?.id || '';
+  if (!input.logistics) input.logistics = defaultLogistics(input, tariffs, settings)?.id || '';
   const r = computeUnit(input, scheme, tariffs, settings);
   return { ...product, scheme, price: r.revenue, cost: r.cost, profit: r.profit, margin: r.margin, roi: r.roi, incomplete: r.incomplete || [] };
 }
@@ -72,12 +68,12 @@ let sortKey = 'updatedAt';
 let sortDir = -1;
 
 export async function render(el, ctx) {
-  const [{ api }, { escapeHtml }, { loadTariffs, SCHEME_NAMES }, calcView] = await Promise.all([
+  const [{ api }, { escapeHtml }, { loadTariffs }, calcView] = await Promise.all([
     import('../api.js'), import('../app.js'), import('./tariffs.js'), import('./calc.js'),
   ]);
   el.innerHTML = '<h1>Мои товары</h1><p class="muted">Загрузка…</p>';
   const [{ tariffs }, settingsRaw, productsRaw] = await Promise.all([loadTariffs(), api.data('settings'), api.data('products')]);
-  const settings = { conversionReserve: 0, taxMode: 'simplified', ...(settingsRaw || {}) };
+  const settings = withSettingsDefaults(settingsRaw);
   let products = Array.isArray(productsRaw) ? productsRaw : [];
   let scheme = SCHEMES.includes(settings.defaultScheme) ? settings.defaultScheme : 'A';
 
@@ -101,8 +97,7 @@ export async function render(el, ctx) {
 
   async function saveScheme(s) {
     try {
-      const cur = (await api.data('settings')) || {};
-      await api.saveData('settings', { ...cur, defaultScheme: s });
+      await saveSettingsPatch({ defaultScheme: s });
     } catch { /* выбор схемы не критичен */ }
   }
 
@@ -130,7 +125,7 @@ export async function render(el, ctx) {
         <span class="small muted">${escapeHtml(SCHEME_NAMES[scheme])}</span>
         <button type="button" id="csv-btn">Выгрузить в CSV (Excel)</button>
       </div>
-      ${anyInc.length ? `<p class="notice incomplete">Расчёт неполный: нет данных по ${escapeHtml(anyInc.map((k) => INCOMPLETE_NAMES[k] || k).join(', '))} — такие цифры помечены «неполный» и считают недостающее как 0. Впишите цифры на странице <a href="#/tariffs">«Тарифы»</a>.</p>` : ''}
+      ${anyInc.length ? `<p class="notice incomplete">Расчёт неполный: нет данных по ${escapeHtml(incompleteList(anyInc))} — такие цифры помечены «неполный» и считают недостающее как 0. Впишите цифры на странице <a href="#/tariffs">«Тарифы»</a>.</p>` : ''}
       <div class="table-wrap"><table class="calc-table products-table">
         <thead><tr>
           <th scope="col">${sortBtn('name', 'Название')}</th>

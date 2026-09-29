@@ -79,3 +79,12 @@ _(дополняется по мере сдачи тасков)_
 - `products.json` — `[{id, name, link1688, note, input, scheme, createdAt, updatedAt}]`.
 - `app/web/js/views/products.js` (модуль без DOM на уровне импорта): `upsertProduct(list, product, nowIso)`, `computeRow(product, scheme, tariffs, settings)`, `toCsv(rows, {rate})`, `incompleteText(keys)`, `render`.
 - `app/web/js/views/calc.js`: `editProduct(product)` — дальнейшее «Сохранить в список» обновляет ту же запись.
+
+### Из таска 06 — доработка по приёмке
+
+- `app/web/js/shared.js` (без DOM): `SCHEMES, SCHEME_NAMES, LINE_LABELS, LINE_ORDER, INCOMPLETE_NAMES, incompleteList(keys), incompleteText(keys), SETTINGS_DEFAULTS, withSettingsDefaults(raw), saveSettingsPatch(patch)`, `parseNum(raw) → {n}|{empty}|{bad}` — единственное место для этих вещей.
+- `calc.defaultLogistics(input, tariffs, settings) → {id,name,cny|null,known}|null` — самая дешёвая с данными, иначе первая; общая для калькулятора и списка товаров.
+- `computeUnit`: логистика считается, если задано хотя бы одно из fixed/perGram; строка получает `hint` про поле, считанное как 0.
+- `GET /api/rate → {rate, eurRate?, date, source}`; `settings.eurRate` (₽/€).
+- `calendar.upcoming` → у элементов `daysLeft`.
+- `.gitignore`: `data/products.json`, `data/settings.json`, `data/tariffs.json`.

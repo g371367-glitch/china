@@ -227,3 +227,23 @@ test('вся логистика null (как в реальном файле): in
   assert.equal(c2.comparable, true);
   assert.equal(calc.compareSchemes(input(), fixture(), settings()).comparable, true);
 });
+
+test('логистика вписана частично: только фикс или только за грамм — считается, второе поле = 0 с подсказкой', () => {
+  const t = fixture();
+  t.logistics.push(
+    { id: 'fixonly', name: 'Только фикс', fixed: { value: 50, unit: 'RUB' }, perGram: { value: null }, bands: [] },
+    { id: 'gramonly', name: 'Только грамм', fixed: { value: null }, perGram: { value: 0.02 }, bands: [] },
+  );
+  const fx = calc.computeUnit(input({ logistics: 'fixonly' }), 'A', t, settings());
+  near(line(fx, 'logistics').cny, 4); // 50 ₽ / 12,5
+  assert.ok(!fx.incomplete.includes('logistics'), 'фикс задан — логистика не «нет данных»');
+  assert.match(line(fx, 'logistics').hint, /цена за грамм не указана — считается 0/);
+  const gr = calc.computeUnit(input({ logistics: 'gramonly' }), 'A', t, settings());
+  near(line(gr, 'logistics').cny, 4); // 0,02 × 200 г
+  assert.ok(!gr.incomplete.includes('logistics'));
+  assert.match(line(gr, 'logistics').hint, /фикс не указан — считается 0/);
+  const none = calc.computeUnit(input({ logistics: 'nodata' }), 'A', t, settings());
+  assert.ok(none.incomplete.includes('logistics'), 'оба поля пусты — как раньше');
+  near(line(none, 'logistics').cny, 0);
+  assert.equal(line(calc.computeUnit(input(), 'A', t, settings()), 'logistics').hint, undefined, 'оба заданы — без подсказки');
+});

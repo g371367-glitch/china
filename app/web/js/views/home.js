@@ -4,17 +4,12 @@
 import { api } from '../api.js';
 import { escapeHtml, docHash, folderLabel, groupDocs } from '../app.js';
 import { upcoming, SOON_DAYS } from '../calendar.js';
+import { saveSettingsPatch } from '../shared.js';
 
 const SHOW = 8;
 const FLAGS = { CN: '🇨🇳', RU: '🇷🇺', 'CN-RU': '🇨🇳→🇷🇺' };
 const COUNTRY = { CN: 'Китай', RU: 'Россия', 'CN-RU': 'Китай → Россия' };
 
-const DAY = 86400000;
-function daysLeft(iso) {
-  const [y, m, d] = iso.split('-').map(Number);
-  const now = new Date();
-  return Math.round((Date.UTC(y, m - 1, d) - Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())) / DAY);
-}
 function dateText(iso) {
   const [y, m, d] = iso.split('-').map(Number);
   return new Date(y, m - 1, d).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
@@ -46,7 +41,7 @@ export async function render(el, { docs }) {
       if (e.needsRegistrationDate) {
         return `<li class="dl needs"><div class="dl-date"><a href="#reg-date" class="nodata">Впишите дату регистрации компании</a></div>${flag}<div>${body}</div></li>`;
       }
-      const n = daysLeft(e.date);
+      const n = e.daysLeft;
       return `<li class="dl${e.soon ? ' soon' : ''}"><div class="dl-date"><strong>${escapeHtml(dateText(e.date))}</strong><div class="small${e.soon ? '' : ' muted'}">${leftText(n)}</div></div>${flag}<div>${body}</div></li>`;
     }).join('')}</ol>
     <p class="small muted">Подсвечены сроки в ближайшие ${SOON_DAYS} дней. Полный календарь — в <a href="${docHash('README.md', { a: 'сводный-календарь-на-год-китай--россия' })}">README</a>.</p>`;
@@ -79,11 +74,7 @@ export async function render(el, { docs }) {
       if (v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) return;
       const msg = el.querySelector('#reg-msg');
       try {
-        const cur = (await api.data('settings')) || {};
-        const next = { ...cur };
-        if (v) next.registrationDate = v; else delete next.registrationDate;
-        await api.saveData('settings', next);
-        settings = next;
+        settings = await saveSettingsPatch({ registrationDate: v || undefined });
         draw();
         el.querySelector('#reg-msg').textContent = v ? 'Дата сохранена.' : 'Дата убрана.';
       } catch (err) {

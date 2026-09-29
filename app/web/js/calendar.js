@@ -8,11 +8,11 @@
 //   {type:'afterRegistration', months}       — от settings.registrationDate ('YYYY-MM-DD').
 //
 // upcoming(events, today, settings, count) →
-//   [{date:'YYYY-MM-DD'|null, country, what, who, when?, important?, soon, needsRegistrationDate}]
+//   [{date:'YYYY-MM-DD'|null, country, what, who, when?, important?, soon, daysLeft:number|null, needsRegistrationDate}]
 // Каждое событие даёт одну — ближайшую — дату (сегодня включительно), прошедшие не попадают.
 // Список отсортирован по дате и обрезан до count; если дата регистрации не вписана, событие
 // afterRegistration идёт первым сверх count с date:null и needsRegistrationDate:true.
-// soon — до срока не больше SOON_DAYS дней.
+// daysLeft — дней от today до date (0 — сегодня; null у заглушки); soon — daysLeft ≤ SOON_DAYS.
 
 export const SOON_DAYS = 30;
 
@@ -78,8 +78,8 @@ export function upcoming(events, today, settings = {}, count = 8) {
   for (const e of events || []) {
     const { rule, ...rest } = e;
     const d = nextDate(rule, t, settings || {});
-    if (d === undefined) placeholders.push({ ...rest, date: null, soon: false, needsRegistrationDate: true });
-    else if (d != null) dated.push({ ...rest, date: iso(d), soon: d - t <= SOON_DAYS, needsRegistrationDate: false, _d: d });
+    if (d === undefined) placeholders.push({ ...rest, date: null, soon: false, daysLeft: null, needsRegistrationDate: true });
+    else if (d != null) dated.push({ ...rest, date: iso(d), soon: d - t <= SOON_DAYS, daysLeft: d - t, needsRegistrationDate: false, _d: d });
   }
   dated.sort((a, b) => a._d - b._d);
   return [...placeholders, ...dated.slice(0, count).map(({ _d, ...x }) => x)];
