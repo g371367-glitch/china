@@ -6,11 +6,13 @@
 //     {input, priceCurrency, scheme, incomplete:boolean, comparable:boolean, results:{A,B,C,D,best,incomplete,comparable}, settings, tariffsChecked}
 //   incomplete:true — scheme выбрана при неизвестных тарифах, это не готовый вывод.
 //   setCalcInput(input) — подставить товар при следующем открытии #/calc (или сразу, если экран открыт).
+//   editProduct(product) — то же для товара из списка; «Сохранить в список» обновит эту запись (тот же id).
 
 import { api } from '../api.js';
 import { escapeHtml } from '../app.js';
 import { compareSchemes, computeUnit, priceForMargin, breakeven } from '../calc.js';
 import { loadTariffs, leafTip, isStale, SCHEME_NAMES, today } from './tariffs.js';
+import { upsertProduct } from './products.js';
 
 const SCHEMES = ['A', 'B', 'C', 'D'];
 const INCOMPLETE_NAMES = {
@@ -25,6 +27,7 @@ let form = {           // значения полей как ввёл польз
 };
 let priceCurrency = 'CNY';
 let lastState = null;
+let saveForm = { id: null, name: '', link1688: '', note: '' };   // «Сохранить в список»; id — правим товар из списка
 
 // ---------- публичное для таска 05 ----------
 
@@ -37,6 +40,13 @@ export function setCalcInput(input) {
   form = { ...form, purchase: s(input.purchase), weight: s(input.weight), l: s(input.dims?.l), w: s(input.dims?.w), h: s(input.dims?.h),
     category: input.category || '', logistics: input.logistics || '', price: s(input.price), noAds: !!input.noAds };
   priceCurrency = 'CNY';
+  saveForm = { id: null, name: '', link1688: '', note: '' };
+  if (S && S.el && S.el.isConnected) draw();
+}
+
+export function editProduct(product) {
+  setCalcInput(product.input || {});
+  saveForm = { id: product.id, name: product.name || '', link1688: product.link1688 || '', note: product.note || '' };
   if (S && S.el && S.el.isConnected) draw();
 }
 
@@ -170,6 +180,21 @@ function draw() {
       <h2>Цена под целевую маржу</h2>
       <div class="calc-form">${field('target', 'Целевая маржа, %', form.target)}</div>
       <div id="target-out"></div>
+    </section>
+
+    <section class="calc-box" id="save-box">
+      <h2>${saveForm.id ? 'Правка товара из списка' : 'Сохранить в список'}</h2>
+      ${saveForm.id ? `<p class="small muted">Сохранение обновит товар «${escapeHtml(saveForm.name)}» в <a href="#/products">«Моих товарах»</a>. <button type="button" id="save-new" class="linkish">Сохранить как новый вместо этого</button></p>` : ''}
+      <div class="calc-form">
+        <label class="fld" for="f-pname"><span>Название</span>
+          <input id="f-pname" value="${escapeHtml(saveForm.name)}" autocomplete="off"><small class="field-error" id="e-pname" hidden></small></label>
+        <label class="fld" for="f-plink"><span>Ссылка на 1688</span>
+          <input id="f-plink" value="${escapeHtml(saveForm.link1688)}" inputmode="url" autocomplete="off" placeholder="https://detail.1688.com/…"></label>
+        <label class="fld wide" for="f-pnote"><span>Заметка</span>
+          <textarea id="f-pnote" rows="2">${escapeHtml(saveForm.note)}</textarea></label>
+        <div class="fld"><span>&nbsp;</span><button type="button" id="save-btn">${saveForm.id ? 'Сохранить изменения' : 'Сохранить в список'}</button></div>
+      </div>
+      <p id="save-msg" class="small" aria-live="polite"></p>
     </section>`;
   bind();
   recalc();
@@ -402,4 +427,34 @@ function bind() {
   });
   taxc.addEventListener('input', () => { form.taxc = taxc.value; const p = parseNum(taxc.value); S.settings.taxCustomRate = p.n >= 0 && p.n < 100 ? p.n / 100 : null; recalc(); });
   taxc.addEventListener('change', () => { if (S.settings.taxCustomRate != null) saveSettings({ taxCustomRate: S.settings.taxCustomRate }); });
+
+  el.querySelector('#f-pname').addEventListener('input', (e) => { saveForm.name = e.target.value; });
+  el.querySelector('#f-plink').addEventListener('input', (e) => { saveForm.link1688 = e.target.value; });
+  el.querySelector('#f-pnote').addEventListener('input', (e) => { saveForm.note = e.target.value; });
+  el.querySelector('#save-btn').addEventListener('click', saveProduct);
+  el.querySelector('#save-new')?.addEventListener('click', () => { saveForm.id = null; draw(); });
+}
+
+async function saveProduct() {
+  const msg = (html) => { const m = S.el.querySelector('#save-msg'); if (m) m.innerHTML = html; };
+  const name = saveForm.name.trim();
+  const nameErr = S.el.querySelector('#e-pname');
+  S.el.querySelector('#f-pname').classList.toggle('invalid', !name);
+  nameErr.textContent = name ? '' : 'Впишите название';
+  nameErr.hidden = !!name;
+  if (!name) return;
+  const st = getCalcState();
+  if (!st) { msg('<span class="error">Сначала заполните товар без ошибок — сохраняется посчитанный товар.</span>'); return; }
+  try {
+    const list = (await api.data('products')) || [];
+    const product = { name, link1688: saveForm.link1688.trim(), note: saveForm.note.trim(), input: st.input, scheme: st.scheme };
+    if (saveForm.id && list.some((p) => p.id === saveForm.id)) product.id = saveForm.id;
+    const updating = !!product.id;
+    await api.saveData('products', upsertProduct(list, product));
+    saveForm = { id: null, name: '', link1688: '', note: '' };
+    draw();
+    S.el.querySelector('#save-msg').innerHTML = `${updating ? 'Товар обновлён' : 'Сохранено'} — <a href="#/products">открыть «Мои товары»</a>.${st.incomplete ? ' <span class="nodata">Расчёт неполный: в списке он будет помечен.</span>' : ''}`;
+  } catch (e) {
+    msg(`<span class="error">Не сохранилось: ${escapeHtml(e.message)}</span>`);
+  }
 }

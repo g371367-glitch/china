@@ -70,3 +70,12 @@ _(дополняется по мере сдачи тасков)_
 - `app/web/js/views/tariffs.js`: `loadTariffs() → {defaults, overrides, tariffs}`; `isStale(checked)`, `sourceHtml(src)`, `leafTip(line)`, `SCHEME_NAMES`, `STALE_DAYS`, `today()`.
 - Тесты JS: `node --test app/tests/` — через `app/tests/index.js`, который подхватывает все `*.test.mjs` в папке (Node 24 иначе считает папку модулем). Новые тесты — просто `*.test.mjs` рядом.
 - (ремонт T03) `compareSchemes → {A,B,C,D,best,incomplete:[keys],comparable:boolean}`; `getCalcState()` добавляет `incomplete:boolean, comparable:boolean` — при `incomplete:true` схема не готовый вывод, и список товаров обязан показывать ту же оговорку «неполный».
+
+### Из таска 05 — главная и товары
+
+- `app/web/js/calendar.js`: `upcoming(events, today:'YYYY-MM-DD'|Date, settings, count=8) → [{date|null, country, what, who, when?, important?, soon, needsRegistrationDate}]`, `SOON_DAYS=30`. По одному (ближайшему) сроку на событие; заглушка «впишите дату регистрации» — первой и вне `count`.
+- `data/calendar.json`: `{version, source, checked, events:[{country:'CN'|'RU'|'CN-RU', when, what, who, important?, rule}]}`; `rule` ∈ `{type:'monthly',day}` | `{type:'quarterly',dates:['MM-DD']}` | `{type:'yearly',date:'MM-DD'}` | `{type:'once',date}` | `{type:'afterRegistration',months}`. Соответствие строкам README проверяет тест.
+- `settings.json` + `registrationDate` ('YYYY-MM-DD'), `defaultScheme` ('A'–'D') — запись слиянием.
+- `products.json` — `[{id, name, link1688, note, input, scheme, createdAt, updatedAt}]`.
+- `app/web/js/views/products.js` (модуль без DOM на уровне импорта): `upsertProduct(list, product, nowIso)`, `computeRow(product, scheme, tariffs, settings)`, `toCsv(rows, {rate})`, `incompleteText(keys)`, `render`.
+- `app/web/js/views/calc.js`: `editProduct(product)` — дальнейшее «Сохранить в список» обновляет ту же запись.
