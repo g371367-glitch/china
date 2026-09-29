@@ -1,7 +1,7 @@
 window.STATE =
 {
   "slug": "trade-kb-calculator",
-  "dir": "2026-09-28-trade-kb-calculator--wip",
+  "dir": "2026-09-28-trade-kb-calculator",
   "title": "База знаний по торговле + калькулятор юнит-экономики Ozon Global / Иу",
   "mode": "interview",
   "depth": "normal",
@@ -11,8 +11,8 @@ window.STATE =
   "memoryFile": "CLAUDE.md",
   "skillDir": "C:/Users/P famly/.claude/skills/autopilot",
   "startedAt": "2026-09-28T19:36:47+03:00",
-  "updatedAt": "2026-09-29T07:21:04+03:00",
-  "finishedAt": null,
+  "updatedAt": "2026-09-29T07:37:57+03:00",
+  "finishedAt": "2026-09-29T07:37:57+03:00",
   "stages": [
     {
       "id": "preflight",
@@ -50,19 +50,22 @@ window.STATE =
       "id": "build",
       "status": "done",
       "startedAt": "2026-09-28T19:58:32+03:00",
-      "note": "5 из 5 тасков готовы",
-      "finishedAt": "2026-09-29T07:21:04+03:00"
+      "note": "6 из 6 тасков готовы",
+      "finishedAt": "2026-09-29T07:36:00+03:00"
     },
     {
       "id": "review",
       "status": "done",
       "startedAt": "2026-09-28T20:08:05+03:00",
-      "note": "проверено 5 из 5",
+      "note": "проверено 6 из 6",
       "finishedAt": "2026-09-29T07:21:04+03:00"
     },
     {
       "id": "final",
-      "status": "pending"
+      "status": "done",
+      "startedAt": "2026-09-29T07:21:54+03:00",
+      "note": "слепая приёмка: 2 расхождения закрыты таском 06",
+      "finishedAt": "2026-09-29T07:37:57+03:00"
     }
   ],
   "requirements": {
@@ -253,11 +256,52 @@ window.STATE =
         "app/web/js/views/calc.js",
         "data/calendar.json"
       ]
+    },
+    {
+      "id": "06",
+      "title": "Доработка по приёмке",
+      "requirements": [
+        "R02",
+        "R03",
+        "R10i"
+      ],
+      "blockedBy": [
+        "01",
+        "02",
+        "03",
+        "04",
+        "05"
+      ],
+      "wave": 4,
+      "zone": [
+        "calc.js",
+        "views/*",
+        "shared.js",
+        ".gitignore"
+      ],
+      "status": "done",
+      "retries": 0,
+      "repairs": 0,
+      "handoffs": 0,
+      "startedAt": "2026-09-29T07:27:54+03:00",
+      "finishedAt": "2026-09-29T07:36:00+03:00",
+      "commit": "f31e88e",
+      "tests": {
+        "passed": 61,
+        "failed": 0
+      },
+      "files": [
+        "app/web/js/shared.js",
+        "app/web/js/calc.js",
+        "app/web/js/views/*",
+        "app/server.py",
+        ".gitignore"
+      ]
     }
   ],
   "singlePass": null,
   "tests": {
-    "passed": 55,
+    "passed": 61,
     "failed": 0
   },
   "debt": {
@@ -315,11 +359,40 @@ window.STATE =
     "T05 products.js:152 — BOM невидимым символом в исходнике",
     "T05 products.js:166 — умолчания settings скопированы из views/calc.js",
     "T05 computeRow без теста — пересчёт по схеме проверяется только в браузере",
-    "T05 клики «Сохранить в список» и «Открыть в калькуляторе → сохранить» вживую не прогонялись"
+    "T05 клики «Сохранить в список» и «Открыть в калькуляторе → сохранить» вживую не прогонялись",
+    "T06 shared.js:9 — чистый calc.js через shared.js зависит от api.js (saveSettingsPatch стоит вынести в слой API)",
+    "T06 tariffs.js:11, products.js:16 — реэкспорты SCHEME_NAMES/incompleteText, два пути импорта",
+    "T06 tariffs.js:13 — LEAF_NAMES повторяет подписи из LINE_LABELS",
+    "T06 tariffs.js:210 — ввод «5.» или «1e3» в поле тарифа теперь ошибка (раньше принимался)",
+    "T06 saveSettingsPatch — правило «undefined удаляет поле» без теста",
+    "T06 shared.test.mjs:28 — тест пересказывает константу SCHEMES",
+    "T06 views/calc.js:293 — добавлена строка «лимит ≈ N ¥ — цена в пределах лимита»"
   ],
   "reviewers": {
     "manifestSpec": "rev-ms3",
     "craft": "rev-craft2"
   },
-  "blind": null
+  "blind": {
+    "drift": [
+      "логистика: вписанный только фикс (50 ₽) не попадает в расчёт — нужен и фикс, и цена за грамм → исправлено в таске 06, перепроверено в браузере",
+      "беспошлинный лимит 200 €: курс EUR ввести негде, проверка не выполняется → исправлено в таске 06, перепроверено в браузере"
+    ],
+    "expected": [
+      "логистика всех 7 тарифов пустая — впишете из кабинета Ozon; расчёты «неполный»",
+      "FBP: нет цифр сборки и хранения — ориентиры/заглушки"
+    ],
+    "extra": [
+      "заметка 05 Тарифы",
+      "ссылка на 1688 и заметка у товара",
+      "пометка «пора перепроверить» >90 дней",
+      "валюта цены ¥/₽",
+      "флажок «Без рекламы»",
+      "объёмный вес"
+    ],
+    "notChecked": [
+      "Запустить.bat (открывает окно)",
+      "офлайн-курс",
+      "добавление категории"
+    ]
+  }
 }
