@@ -11,7 +11,7 @@ window.STATE =
   "memoryFile": "CLAUDE.md",
   "skillDir": "C:/Users/P famly/.claude/skills/autopilot",
   "startedAt": "2026-09-28T19:36:47+03:00",
-  "updatedAt": "2026-09-28T20:34:03+03:00",
+  "updatedAt": "2026-09-29T07:21:04+03:00",
   "finishedAt": null,
   "stages": [
     {
@@ -48,15 +48,17 @@ window.STATE =
     },
     {
       "id": "build",
-      "status": "active",
+      "status": "done",
       "startedAt": "2026-09-28T19:58:32+03:00",
-      "note": "3 из 5 тасков готовы"
+      "note": "5 из 5 тасков готовы",
+      "finishedAt": "2026-09-29T07:21:04+03:00"
     },
     {
       "id": "review",
-      "status": "active",
+      "status": "done",
       "startedAt": "2026-09-28T20:08:05+03:00",
-      "note": "проверено 3 из 5; 03 в ремонте"
+      "note": "проверено 5 из 5",
+      "finishedAt": "2026-09-29T07:21:04+03:00"
     },
     {
       "id": "final",
@@ -65,8 +67,8 @@ window.STATE =
   ],
   "requirements": {
     "total": 11,
-    "done": 0,
-    "inTicket": 8,
+    "done": 8,
+    "inTicket": 0,
     "inSpec": 0,
     "placeholder": 0,
     "deferred": 3,
@@ -157,13 +159,24 @@ window.STATE =
         "app/web/js/calc.js",
         "views/calc, views/tariffs"
       ],
-      "status": "repair",
+      "status": "done",
       "retries": 0,
       "repairs": 1,
       "handoffs": 0,
       "startedAt": "2026-09-28T20:16:15+03:00",
       "repairFindings": [
         "решение 11: «лучшая» и цены под маржу без пометки «неполный» — D выигрывает за счёт null=0"
+      ],
+      "finishedAt": "2026-09-28T20:36:50+03:00",
+      "commit": "f3fcb67",
+      "tests": {
+        "passed": 18,
+        "failed": 0
+      },
+      "files": [
+        "app/web/js/calc.js",
+        "app/web/js/views/calc.js",
+        "app/web/js/views/tariffs.js"
       ]
     },
     {
@@ -219,15 +232,32 @@ window.STATE =
         "views/home, views/products",
         "data/calendar.json"
       ],
-      "status": "pending",
+      "status": "done",
       "retries": 0,
-      "repairs": 0,
-      "handoffs": 0
+      "repairs": 1,
+      "handoffs": 0,
+      "startedAt": "2026-09-29T07:10:26+03:00",
+      "tests": {
+        "passed": 31,
+        "failed": 0
+      },
+      "finishedAt": "2026-09-29T07:21:04+03:00",
+      "commit": "44f7c31",
+      "repairFindings": [
+        "views/calc.js переведён с CRLF на LF — дифф на весь файл; возвращены CRLF"
+      ],
+      "files": [
+        "app/web/js/calendar.js",
+        "app/web/js/views/home.js",
+        "app/web/js/views/products.js",
+        "app/web/js/views/calc.js",
+        "data/calendar.json"
+      ]
     }
   ],
   "singlePass": null,
   "tests": {
-    "passed": 41,
+    "passed": 55,
     "failed": 0
   },
   "debt": {
@@ -273,12 +303,23 @@ window.STATE =
     "T03 tests/index.js — import без await/catch",
     "T04 Бразилия: вычет $20/$30 — официальная страница недоступна, расхождение записано с вопросом",
     "T04 апостиль подтверждён hcch.net (вне списка решения 19, но официальный)",
-    "T04 вопросы адресованы также консультанту/менеджерам площадок, не только бухгалтеру/агенту/Ozon"
+    "T04 вопросы адресованы также консультанту/менеджерам площадок, не только бухгалтеру/агенту/Ozon",
+    "T05 views/calc.js:187 — кнопка «Сохранить как новый» сверх спеки",
+    "T05 home.js:68 — вторая кнопка «Мои товары» на главной, в спеке нет",
+    "T05 calendar.json:17 — «Декабрь» из README развёрнут в 31 декабря",
+    "T05 products.js:101 — словарь INCOMPLETE_NAMES продублирован из views/calc.js (импорт возможен)",
+    "T05 app.js:11 — неиспользуемая заглушка stub",
+    "T05 products.js:129 — запасной выбор логистики (первая) расходится с калькулятором (самая дешёвая)",
+    "T05 home.js:12 — daysLeft считает даты сам, мимо calendar.upcoming",
+    "T05 слияние settings написано трижды (home, products, calc)",
+    "T05 products.js:152 — BOM невидимым символом в исходнике",
+    "T05 products.js:166 — умолчания settings скопированы из views/calc.js",
+    "T05 computeRow без теста — пересчёт по схеме проверяется только в браузере",
+    "T05 клики «Сохранить в список» и «Открыть в калькуляторе → сохранить» вживую не прогонялись"
   ],
   "reviewers": {
-    "manifestSpec": "rev-ms",
-    "craft": "rev-craft",
-    "manifestSpec2": "rev-ms2"
+    "manifestSpec": "rev-ms3",
+    "craft": "rev-craft2"
   },
   "blind": null
 }
