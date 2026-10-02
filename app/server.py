@@ -3,6 +3,7 @@
 Только стандартная библиотека. Слушает 127.0.0.1. Запуск: python app/server.py
 """
 import contextlib
+import http.cookies
 import hashlib
 import json
 import os
@@ -24,11 +25,18 @@ DEFAULT_PORT = 8765
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_ROOT = os.path.dirname(APP_DIR)
 WEB_DIR = os.path.join(APP_DIR, "web")
+LOGIN_PAGE = os.path.join(WEB_DIR, "login.html")
 RATE_URL = "https://www.cbr-xml-daily.ru/daily_json.js"
 RATE_TIMEOUT = 5
 
 DATA_READ = {"products", "tariffs", "tariffs.default", "settings", "calendar"}
 DATA_WRITE = {"products", "tariffs", "settings"}
+
+# Сайт для коллег: без входа открыто только это (метод, путь).
+SESSION_COOKIE = "kb_session"
+OPEN_PATHS = {("GET", "/login"), ("HEAD", "/login"), ("GET", "/css/style.css"), ("HEAD", "/css/style.css"),
+              ("POST", "/api/login"), ("POST", "/api/logout")}
+NEED_LOGIN = "Нужно войти"
 
 # Служебные папки корня (в любом регистре) и служебные файлы корня.
 SERVICE_DIRS = {".autopilot", ".git", "app", "data", ".claude", "node_modules"}
@@ -244,13 +252,25 @@ def _write_atomic(path, value, name):
         with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
             json.dump(value, f, ensure_ascii=False, indent=2)
             f.write("\n")
-        os.replace(tmp, path)
+        _replace_retrying(tmp, path, name)
     except BaseException:
         try:
             os.remove(tmp)
         except OSError:
             pass
         raise
+
+
+def _replace_retrying(tmp, path, name):
+    """os.replace; на Windows занятый чтением файл даёт PermissionError — повторяем до LOCK_TIMEOUT, затем DataBusy."""
+    deadline = time.monotonic() + LOCK_TIMEOUT
+    while True:
+        try:
+            return os.replace(tmp, path)
+        except PermissionError:
+            if time.monotonic() >= deadline:
+                raise DataBusy(name) from None
+            time.sleep(0.05)
 
 
 # ---------- курс ЦБ ----------
@@ -278,6 +298,9 @@ def fetch_rate(url=RATE_URL, timeout=RATE_TIMEOUT):
 class Handler(SimpleHTTPRequestHandler):
     root = DEFAULT_ROOT
     rate_url = RATE_URL
+    access = None      # auth.Access — сервер для коллег, вход по паролю
+    limiter = None     # auth.LoginLimiter этого сервера
+    team_info = None   # объект с .url — для /api/team на локальном сервере
     extensions_map = {
         **SimpleHTTPRequestHandler.extensions_map,
         ".html": "text/html; charset=utf-8",
@@ -316,12 +339,124 @@ class Handler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    # ---------- вход (только сервер для коллег) ----------
+
+    def _path(self):
+        return urllib.parse.unquote(urllib.parse.urlsplit(self.path).path)
+
+    def _session_ok(self):
+        try:
+            jar = http.cookies.SimpleCookie(self.headers.get("Cookie") or "")
+        except http.cookies.CookieError:
+            return False
+        morsel = jar.get(SESSION_COOKIE)
+        return bool(morsel and morsel.value) and self.access.verify(morsel.value)
+
+    def _redirect(self, location):
+        self.send_response(303)
+        self.send_header("Location", location)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def _gate(self, method):
+        """Сервер для коллег без входа: True — ответ уже отправлен (303 на /login или 401)."""
+        if self.access is None:
+            return False
+        path = self._path()
+        if (method, path) in OPEN_PATHS or self._session_ok():
+            return False
+        if path.startswith("/api/"):
+            self.send_json({"error": NEED_LOGIN}, 401)
+        else:
+            self._redirect("/login")
+        return True
+
+    def _https(self):
+        proto = (self.headers.get("X-Forwarded-Proto") or "").strip().lower()
+        return proto == "https" or "https" in (self.headers.get("Cf-Visitor") or "").lower()
+
+    def _cookie(self, value, max_age):
+        parts = [f"{SESSION_COOKIE}={value}", "HttpOnly", "SameSite=Lax", "Path=/", f"Max-Age={max_age}"]
+        if self._https():
+            parts.append("Secure")
+        return "; ".join(parts)
+
+    def _client_ip(self):
+        return (self.headers.get("Cf-Connecting-IP") or "").strip() or self.client_address[0]
+
+    def _read_body(self):
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = 0
+        return self.rfile.read(length) if length > 0 else b""  # читаем тело всегда, иначе клиент получит обрыв
+
+    def _login(self, raw):
+        import auth
+        ip = self._client_ip()
+        ok, retry = self.limiter.check(ip)
+        if not ok:
+            minutes = max(1, -(-retry // 60))
+            return self.send_json({"error": f"Слишком много попыток, попробуйте через {minutes} мин"}, 429,
+                                  headers={"Retry-After": str(retry)})
+        try:
+            pw = json.loads(raw.decode("utf-8")).get("password")
+        except (ValueError, UnicodeDecodeError, AttributeError):
+            pw = None
+        if not isinstance(pw, str) or not self.access.check_password(pw):
+            self.limiter.failure(ip)
+            return self.send_json({"error": "Неверный пароль"}, 401)
+        self.limiter.success(ip)
+        token = self.access.issue()
+        return self.send_json({"ok": True}, headers={"Set-Cookie": self._cookie(token, auth.SESSION_SECONDS)})
+
+    def do_POST(self):
+        raw = self._read_body()
+        path = self._path()
+        if self.access is not None and path == "/api/login":
+            return self._login(raw)
+        if self.access is not None and path == "/api/logout":
+            return self.send_json({"ok": True}, headers={"Set-Cookie": self._cookie("", 0)})
+        if self._gate("POST"):
+            return
+        return self.send_json({"error": "Не найдено"}, 404)
+
+    def do_HEAD(self):
+        if self._gate("HEAD"):
+            return
+        if self.access is not None and self._path() == "/login":
+            return self.send_page(LOGIN_PAGE, head=True)
+        return super().do_HEAD()
+
+    def send_page(self, full, head=False):
+        with open(full, "rb") as f:
+            body = f.read()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        if not head:
+            self.wfile.write(body)
+
+    # ---------- маршруты ----------
+
     def do_GET(self):
+        if self._gate("GET"):
+            return
         url = urllib.parse.urlsplit(self.path)
         path = urllib.parse.unquote(url.path)
         query = urllib.parse.parse_qs(url.query)
         if path == "/api/ping":
-            return self.send_json({"app": APP_NAME, "version": VERSION})
+            return self.send_json({"app": APP_NAME, "version": VERSION, "team": self.access is not None})
+        if path == "/api/team":
+            if self.access is not None:
+                return self.send_json({"error": "Не найдено"}, 404)
+            link = getattr(self.team_info, "url", None)
+            return self.send_json({"active": True, "url": link} if link else {"active": False})
+        if path == "/login" and self.access is not None:
+            if self._session_ok():
+                return self._redirect("/")
+            return self.send_page(LOGIN_PAGE)
         if path == "/api/docs":
             return self.send_json(list_docs(self.root))
         if path == "/api/doc":
@@ -350,12 +485,10 @@ class Handler(SimpleHTTPRequestHandler):
         return super().do_GET()
 
     def do_PUT(self):
-        path = urllib.parse.unquote(urllib.parse.urlsplit(self.path).path)
-        try:
-            length = int(self.headers.get("Content-Length") or 0)
-        except ValueError:
-            length = 0
-        raw = self.rfile.read(length) if length > 0 else b""  # читаем тело всегда, иначе клиент получит обрыв
+        raw = self._read_body()
+        if self._gate("PUT"):
+            return
+        path = self._path()
         name = path[len("/api/data/"):] if path.startswith("/api/data/") else None
         if name not in DATA_WRITE:
             return self.send_json({"error": "Запись сюда запрещена"}, 404)
@@ -379,8 +512,13 @@ class _Server(ThreadingHTTPServer):
     daemon_threads = True
 
 
-def make_server(root=DEFAULT_ROOT, host=HOST, port=DEFAULT_PORT, rate_url=RATE_URL):
-    handler = type("BoundHandler", (Handler,), {"root": os.path.abspath(root), "rate_url": rate_url})
+def make_server(root=DEFAULT_ROOT, host=HOST, port=DEFAULT_PORT, rate_url=RATE_URL, access=None, team_info=None):
+    """access (auth.Access) задан → сервер для коллег: вход по паролю. team_info.url → /api/team локального."""
+    attrs = {"root": os.path.abspath(root), "rate_url": rate_url, "access": access, "team_info": team_info}
+    if access is not None:
+        import auth
+        attrs["limiter"] = auth.LoginLimiter()
+    handler = type("BoundHandler", (Handler,), attrs)
     return _Server((host, port), handler)
 
 

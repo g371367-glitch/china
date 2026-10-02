@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Вход — База знаний</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="login-page">
+  <main class="login-box">
+    <h1>База знаний по торговле</h1>
+    <p class="muted">Введите общий пароль, который вам сообщил владелец сайта.</p>
+    <form id="login-form" novalidate>
+      <label class="fld" for="password"><span>Пароль</span>
+        <input type="password" id="password" name="password" autocomplete="current-password" required autofocus>
+      </label>
+      <p id="login-msg" class="error" role="alert" aria-live="assertive"></p>
+      <button type="submit" class="btn primary">Войти</button>
+    </form>
+    <p class="small muted">Вход запоминается на 30 дней на этом устройстве.</p>
+  </main>
+  <script>
+    (function () {
+      var form = document.getElementById('login-form');
+      var input = document.getElementById('password');
+      var msg = document.getElementById('login-msg');
+      var button = form.querySelector('button');
+
+      function fail(text) {
+        msg.textContent = text;
+        input.value = '';
+        input.focus();
+      }
+
+      form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        if (!input.value) { fail('Введите пароль'); return; }
+        button.disabled = true;
+        msg.textContent = '';
+        fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json; charset=utf-8' },
+          body: JSON.stringify({ password: input.value }),
+          cache: 'no-store',
+          credentials: 'same-origin'
+        }).then(function (res) {
+          if (res.ok) { location.replace('/'); return; }
+          return res.json().catch(function () { return {}; }).then(function (body) {
+            fail(res.status === 401 ? 'Неверный пароль' : (body && body.error) || 'Ошибка сервера (' + res.status + ')');
+          });
+        }).catch(function () {
+          fail('Нет связи с сайтом — попробуйте ещё раз');
+        }).then(function () {
+          button.disabled = false;
+        });
+      });
+    })();
+  </script>
+</body>
+</html>

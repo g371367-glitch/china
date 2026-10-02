@@ -234,5 +234,157 @@ class MainTest(TempRootMixin, unittest.TestCase):
         self.assertFalse(os.path.exists(os.path.join(self.root, "tools", "cloudflared.exe")))
 
 
+# ---------- сквозной запуск: настоящие server и auth, подменён только туннель ----------
+
+import http.client  # noqa: E402
+import json  # noqa: E402
+import socket  # noqa: E402
+import threading  # noqa: E402
+
+import auth  # noqa: E402
+import server  # noqa: E402
+
+TEAM_PW = "пароль-коллег-1"
+
+
+def free_port():
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def hget(port, path, method="GET", body=None, headers=None):
+    c = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    try:
+        c.request(method, path, body=json.dumps(body).encode() if body is not None else None, headers=headers or {})
+        r = c.getresponse()
+        return r.status, r.read().decode("utf-8", "replace"), r
+    finally:
+        c.close()
+
+
+class EndToEndTest(TempRootMixin, unittest.TestCase):
+    def setUp(self):
+        super().setUp()
+        os.makedirs(os.path.join(self.root, "tools"))
+        pathlib.Path(self.root, "tools", "cloudflared.exe").write_bytes(b"x")  # «найден», но не запускается
+        self.local_port, self.team_port = free_port(), free_port()
+        self.tunnels, self.cleanups, self.said = [], [], []
+        root, tunnels = self.root, self.tunnels
+
+        class FakeTunnel(team.Tunnel):
+            def __init__(self, exe, port, command=None):
+                super().__init__(exe, port, command=[sys.executable, "-u", "-c", BOX + "time.sleep(60)"])
+                self.password_was_set = None
+                tunnels.append(self)
+
+            def start(self, timeout=40):
+                self.password_was_set = auth.Access(root).configured()
+                return super().start(timeout)
+
+        for target, value in (("team.Tunnel", FakeTunnel), ("team.TEAM_PORT", self.team_port),
+                              ("server.DEFAULT_PORT", self.local_port),
+                              ("team.copy_to_clipboard", lambda text: True),
+                              ("team.on_close", self.cleanups.append)):
+            p = mock.patch(target, value)
+            p.start()
+            self.addCleanup(p.stop)
+
+    def start_main(self, passwords=()):
+        pw = iter(passwords)
+        result = {}
+        with mock.patch("getpass.getpass", lambda prompt="": next(pw)):
+            t = threading.Thread(target=lambda: result.setdefault("code", team.main(
+                [], root=self.root, say=self.said.append, ask=lambda prompt="": "н")), daemon=True)
+            t.start()
+            deadline = time.monotonic() + 30
+            while not any("Доступ для коллег включён" in s for s in self.said) and t.is_alive() \
+                    and time.monotonic() < deadline:
+                time.sleep(0.05)
+        self.assertTrue(t.is_alive(), " | ".join(self.said))
+        return t, result
+
+    def close_window(self, t, result):
+        self.cleanups[0]()  # то, что делает закрытие окна консоли
+        t.join(15)
+        self.assertFalse(t.is_alive())
+        self.assertFalse(self.tunnels[0].alive())
+        with self.assertRaises(OSError):
+            hget(self.team_port, "/login")
+        return result.get("code")
+
+    def login_works(self):
+        self.assertEqual(hget(self.team_port, "/")[0], 303)
+        status, body, r = hget(self.team_port, "/api/login", "POST", {"password": TEAM_PW},
+                               {"Content-Type": "application/json"})
+        self.assertEqual(status, 200, body)
+        cookie = r.getheader("Set-Cookie").split(";")[0]
+        status, body, _ = hget(self.team_port, "/api/ping", headers={"Cookie": cookie})
+        self.assertEqual(status, 200)
+        self.assertIs(json.loads(body)["team"], True)
+
+    def test_first_run_asks_password_before_tunnel_then_login_works_and_close_stops_all(self):
+        t, result = self.start_main(passwords=[TEAM_PW, TEAM_PW])
+        self.assertIs(self.tunnels[0].password_was_set, True)
+        self.assertTrue(auth.Access(self.root).check_password(TEAM_PW))
+        self.login_works()
+        # локальный сайт — без пароля и со ссылкой на главной
+        self.assertEqual(json.loads(hget(self.local_port, "/api/team")[1]), {"active": True, "url": URL})
+        self.assertEqual(hget(self.local_port, "/")[0], 200)
+        self.close_window(t, result)
+        with self.assertRaises(OSError):
+            hget(self.local_port, "/api/ping")
+        text = " | ".join(self.said)
+        self.assertNotIn(TEAM_PW, text)
+        self.assertIn(URL, text)
+
+    def test_local_site_already_running_only_team_part_starts(self):
+        auth.Access(self.root).set_password(TEAM_PW)
+        mine = server.make_server(self.root, port=self.local_port)
+        threading.Thread(target=mine.serve_forever, daemon=True).start()
+        self.addCleanup(mine.server_close)
+        self.addCleanup(mine.shutdown)
+        t, result = self.start_main()
+        self.login_works()
+        self.assertIn("уже открыт обычным запуском", " | ".join(self.said))
+        self.assertEqual(json.loads(hget(self.local_port, "/api/team")[1]), {"active": False})
+        self.close_window(t, result)
+        self.assertEqual(hget(self.local_port, "/api/ping")[0], 200)  # чужой (обычный) сайт не тронут
+
+    def test_ctrl_c_while_waiting_for_link_says_access_closed(self):
+        auth.Access(self.root).set_password(TEAM_PW)
+
+        def interrupted(self_, timeout=40):
+            raise KeyboardInterrupt
+
+        with mock.patch.object(team.Tunnel, "start", interrupted):
+            code = team.main([], root=self.root, say=self.said.append, ask=lambda prompt="": "н")
+        text = " | ".join(self.said)
+        self.assertEqual(code, 0)
+        self.assertIn("Доступ для коллег закрыт", text)
+        self.assertNotIn("Туннель не запустился", text)
+
+
+class TunnelCtrlCTest(unittest.TestCase):
+    def test_ctrl_c_during_wait_stops_process_and_propagates(self):
+        t = fake_tunnel(8766, "import time; time.sleep(60)")
+        self.addCleanup(t.stop)
+        threading.Timer(0.5, lambda: t._found.set()).start()  # будим ожидание
+        calls = []
+        real_wait = t._found.wait
+
+        def wait(step):
+            calls.append(step)
+            if len(calls) == 2:
+                raise KeyboardInterrupt
+            return real_wait(step)
+
+        t._found.wait = wait
+        with self.assertRaises(KeyboardInterrupt):
+            t.start(timeout=30)
+        self.assertLessEqual(max(calls), 1)  # ждём короткими шагами
+        self.assertFalse(t.alive())
+
+
 if __name__ == "__main__":
     unittest.main()

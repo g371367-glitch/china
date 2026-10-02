@@ -319,6 +319,30 @@ class Versions(ServerCase):
         self.assertEqual(json.loads(text), {"error": "Данные заняты — попробуйте ещё раз"})
         self.assertEqual(self.get_json("/api/data/settings"), {"rate": 1})
 
+    def test_put_while_file_open_for_reading_waits_then_writes(self):
+        # Windows: os.replace падает PermissionError, пока параллельный GET держит файл открытым.
+        self.call("/api/data/settings", "PUT", {"rate": 1})
+        f = open(server.data_path(self.root, "settings"), "rb")
+        threading.Timer(0.4, f.close).start()
+        status, _, text = self.call("/api/data/settings", "PUT", {"rate": 2})
+        self.assertEqual(status, 200, text)
+        self.assertEqual(self.get_json("/api/data/settings"), {"rate": 2})
+
+    @unittest.skipUnless(os.name == "nt", "открытый файл мешает замене только на Windows")
+    def test_put_while_file_stays_open_is_503_not_500(self):
+        self.call("/api/data/settings", "PUT", {"rate": 1})
+        old = server.LOCK_TIMEOUT
+        server.LOCK_TIMEOUT = 0.3
+        try:
+            with open(server.data_path(self.root, "settings"), "rb"):
+                status, _, text = self.call("/api/data/settings", "PUT", {"rate": 2})
+        finally:
+            server.LOCK_TIMEOUT = old
+        self.assertEqual(status, 503)
+        self.assertEqual(json.loads(text), {"error": "Данные заняты — попробуйте ещё раз"})
+        self.assertEqual(self.get_json("/api/data/settings"), {"rate": 1})
+        self.assertEqual([n for n in os.listdir(os.path.join(self.root, "data")) if n.endswith(".tmp")], [])
+
     def test_versioned_functions(self):
         self.assertEqual(server.read_data_versioned(self.root, "products"), (None, '"none"'))
         server.write_data(self.root, "products", [1])

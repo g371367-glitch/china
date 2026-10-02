@@ -9,9 +9,18 @@ export class ApiError extends Error {
   }
 }
 
+export const LOGIN_PATH = '/login';
+export const NO_VERSION_MESSAGE = 'Сервер не сообщил версию данных — обновите страницу и попробуйте ещё раз';
+
+/** Сайт для коллег: вход истёк или не выполнен → на страницу входа. */
+function toLogin() {
+  if (typeof location !== 'undefined' && location.pathname !== LOGIN_PATH) location.assign(LOGIN_PATH);
+}
+
 async function handle(res) {
   const type = res.headers.get('Content-Type') || '';
   const body = type.includes('application/json') ? await res.json() : await res.text();
+  if (res.status === 401) toLogin();
   if (!res.ok) {
     const message = body && typeof body === 'object' && body.error ? body.error : `Ошибка сервера (${res.status})`;
     throw new ApiError(message, res.status);
@@ -44,9 +53,10 @@ export async function update(name, fn, { retries = 3 } = {}) {
     const res = await send('data/' + name);
     const current = await handle(res);
     const etag = res.headers.get('ETag');
+    // Без версии запись затёрла бы чужие правки молча — лучше честная ошибка.
+    if (!etag) throw new ApiError(NO_VERSION_MESSAGE, res.status);
     const next = await fn(current);
-    const headers = { 'Content-Type': 'application/json; charset=utf-8' };
-    if (etag) headers['If-Match'] = etag;
+    const headers = { 'Content-Type': 'application/json; charset=utf-8', 'If-Match': etag };
     try {
       await request('data/' + name, { method: 'PUT', headers, body: JSON.stringify(next) });
       return next;
@@ -86,6 +96,13 @@ export const api = {
   update,
   /** {rate, date, source:'cbr'}; при ошибке — ApiError со status 502 */
   rate: () => get('rate'),
+  /** Локальный сайт: {active:true, url} | {active:false}; на сайте для коллег — ApiError 404. */
+  team: () => get('team'),
+  /** Сайт для коллег: выйти (cookie стирается) и перейти на страницу входа. */
+  logout: async () => {
+    await request('logout', { method: 'POST' });
+    if (typeof location !== 'undefined') location.assign(LOGIN_PATH);
+  },
 };
 
 export default api;

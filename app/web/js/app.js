@@ -168,6 +168,24 @@ async function start() {
   const { path, query } = parseHash();
   if (path === 'search') document.getElementById('search-form').q.value = query.get('q') || '';
   render();
+  addLogout();
+}
+
+/** Пункт «Выйти» — только на сайте для коллег (вход по паролю): /api/ping → team:true. */
+function addLogout() {
+  api.ping().then((p) => {
+    if (!p || p.team !== true || document.getElementById('nav-logout')) return;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.id = 'nav-logout';
+    btn.className = 'nav-logout';
+    btn.textContent = 'Выйти';
+    btn.addEventListener('click', () => {
+      btn.disabled = true;
+      api.logout().catch(() => { location.assign('/login'); });
+    });
+    document.getElementById('nav-sections').after(btn);
+  }).catch(() => {});  // 401 уже увёл на вход; нет связи — меню и так покажет ошибку
 }
 
 start();

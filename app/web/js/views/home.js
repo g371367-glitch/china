@@ -24,11 +24,43 @@ function leftText(n) {
 
 export async function render(el, { docs }) {
   el.innerHTML = '<h1>База знаний по торговле</h1><p class="muted">Загрузка…</p>';
-  const [calendar, settingsRaw] = await Promise.all([
+  const [calendar, settingsRaw, team] = await Promise.all([
     api.data('calendar').catch(() => null),
     api.data('settings').catch(() => null),
+    api.team().catch(() => null),   // на сайте для коллег /api/team нет (404) — блока нет
   ]);
   let settings = settingsRaw || {};
+
+  /** Локальная главная, пока включён «Доступ для коллег»: ссылка и «Копировать». */
+  function teamHtml() {
+    if (!team || !team.active || !team.url) return '';
+    return `<section class="team-box" aria-label="Доступ для коллег">
+      <strong>Доступ для коллег включён:</strong>
+      <div class="team-link">
+        <input type="text" id="team-url" readonly value="${escapeHtml(team.url)}" aria-label="Ссылка для коллег">
+        <button type="button" class="btn" id="team-copy">Копировать</button>
+      </div>
+      <div class="small muted" id="team-msg">Ссылка меняется при каждом запуске «Доступ для коллег.bat». Коллеги входят по общему паролю.</div>
+    </section>`;
+  }
+
+  function bindTeam() {
+    const btn = el.querySelector('#team-copy');
+    if (!btn) return;
+    btn.addEventListener('click', async () => {
+      const input = el.querySelector('#team-url');
+      const msg = el.querySelector('#team-msg');
+      let ok = false;
+      try {
+        await navigator.clipboard.writeText(team.url);
+        ok = true;
+      } catch {
+        input.select();
+        try { ok = document.execCommand('copy'); } catch { ok = false; }
+      }
+      msg.textContent = ok ? 'Ссылка скопирована — вставьте её в сообщение коллегам.' : 'Не получилось скопировать — выделите ссылку и нажмите Ctrl+C.';
+    });
+  }
 
   function deadlinesHtml() {
     const events = calendar && Array.isArray(calendar.events) ? calendar.events : null;
@@ -51,6 +83,7 @@ export async function render(el, { docs }) {
     const reg = settings.registrationDate || '';
     el.innerHTML = `
       <h1>База знаний по торговле</h1>
+      ${teamHtml()}
       <section class="calc-box">
         <h2>Ближайшие сроки</h2>
         <div id="deadlines">${deadlinesHtml()}</div>
@@ -69,6 +102,7 @@ export async function render(el, { docs }) {
             <ul>${list.map((d) => `<li><a href="${docHash(d.path)}">${escapeHtml(d.title)}</a></li>`).join('')}</ul>
           </section>`).join('')}
       </div>`;
+    bindTeam();
     el.querySelector('#reg-date').addEventListener('change', async (e) => {
       const v = e.target.value;   // '' — очистили
       if (v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) return;

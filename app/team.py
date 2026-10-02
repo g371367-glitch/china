@@ -23,10 +23,10 @@ MANUAL_URL = "https://github.com/cloudflare/cloudflared/releases/latest"
 EXE_NAME = "cloudflared.exe"
 HOST = "127.0.0.1"
 TEAM_PORT = 8766  # сайт для коллег — первый свободный порт начиная с этого
-MIN_PASSWORD = 8  # то же, что auth.MIN_PASSWORD
+WAIT_STEP = 0.2   # с: ждём ссылку короткими шагами — на Windows долгий Event.wait не прерывается Ctrl+C
 
-TUNNEL_FAILED = ("Туннель не запустился — проверьте интернет (коллегам и вам в Китае нужен VPN) "
-                 "и запустите «Доступ для коллег.bat» ещё раз.")
+TUNNEL_FAILED = ("Туннель не запустился — проверьте интернет (коллегам в Китае нужен VPN; "
+                 "если вы сами в Китае — тоже) и запустите «Доступ для коллег.bat» ещё раз.")
 TUNNEL_STOPPED = "Туннель остановился — доступ для коллег закрыт."
 
 
@@ -123,7 +123,13 @@ class Tunnel:
         except OSError as e:
             raise TeamError(f"Не удалось запустить cloudflared ({_short(e)}). {TUNNEL_FAILED}") from None
         threading.Thread(target=self._read, args=(self._proc,), daemon=True).start()
-        self._found.wait(timeout)
+        deadline = time.monotonic() + timeout
+        try:
+            while not self._found.is_set() and time.monotonic() < deadline:
+                self._found.wait(WAIT_STEP)
+        except KeyboardInterrupt:  # Ctrl+C, пока ждём ссылку: гасим туннель, наверху — «доступ закрыт»
+            self.stop()
+            raise
         if self.url is None:
             self.stop()
             raise TeamError(TUNNEL_FAILED)
@@ -159,9 +165,15 @@ class Tunnel:
 
 # ---------- окно: пароль, буфер обмена, закрытие ----------
 
-def ask_password(getpass_fn=None, say=print, min_len=MIN_PASSWORD):
-    """Скрытый ввод пароля дважды; короткий или несовпадающий — повтор с пояснением."""
+def ask_password(getpass_fn=None, say=print, min_len=None):
+    """Скрытый ввод пароля дважды; короткий или несовпадающий — повтор с пояснением.
+
+    min_len по умолчанию — auth.MIN_PASSWORD (единственный источник длины).
+    """
     getpass_fn = getpass_fn or getpass.getpass
+    if min_len is None:
+        import auth
+        min_len = auth.MIN_PASSWORD
     while True:
         pw = getpass_fn(f"Придумайте пароль для коллег (не короче {min_len} символов, ввод не виден): ")
         if len(pw) < min_len:
@@ -215,19 +227,20 @@ def _offer_download(root, say, ask):
     if answer not in ("д", "да", "y", "yes", "l"):  # «l» — «д» в английской раскладке
         raise TeamError("Без cloudflared доступ для коллег не включить. " + manual_hint(root))
     say("Скачиваю cloudflared…")
+    shown = [-1]  # последний показанный шаг: каждые 10% (или 5 МБ, если размер неизвестен)
 
     def progress(done, total):
         mb = done / 1_048_576
+        step = done * 10 // total if total else int(mb // 5)
+        if step == shown[0]:
+            return
+        shown[0] = step
         if total:
-            print(f"\r  Скачано {mb:.1f} из {total / 1_048_576:.1f} МБ ({done * 100 // total}%)",
-                  end="", flush=True)
+            say(f"  Скачано {mb:.1f} из {total / 1_048_576:.1f} МБ ({done * 100 // total}%)")
         else:
-            print(f"\r  Скачано {mb:.1f} МБ", end="", flush=True)
+            say(f"  Скачано {mb:.1f} МБ")
 
-    try:
-        return download_cloudflared(root, progress)
-    finally:
-        print(flush=True)
+    return download_cloudflared(root, progress)
 
 
 def _bind_team_server(server, root, access, skip):
@@ -251,7 +264,7 @@ def _main(args, root, say, ask):
     import auth  # таск 02: пароль и входы
 
     access = auth.Access(root)
-    min_len = getattr(auth, "MIN_PASSWORD", MIN_PASSWORD)
+    min_len = auth.MIN_PASSWORD
     if "--set-password" in args:
         say("Смена пароля для коллег.")
         access.set_password(ask_password(say=say, min_len=min_len))
