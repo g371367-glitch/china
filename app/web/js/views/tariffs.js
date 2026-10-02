@@ -1,11 +1,12 @@
 // Экран «Тарифы»: все цифры калькулятора из data/tariffs.default.json с наложенными правками из data/tariffs.json.
 // Правка пишет в tariffs.json только изменённый лист (массивы — по id) и поле edited; «вернуть исходную» удаляет правку.
+// Запись — операцией над свежим tariffs.json (api.update), чтобы не затереть правки коллег.
 // Хелперы loadTariffs / isStale / sourceHtml / leafTip экспортируются для экрана калькулятора.
 
 import { api } from '../api.js';
 import { escapeHtml, docHash } from '../app.js';
 import { mergeTariffs } from '../calc.js';
-import { SCHEME_NAMES, parseNum } from '../shared.js';
+import { SCHEME_NAMES, parseNum, setTariffLeaf, resetTariffLeaf, addTariffCategory, removeTariffCategory } from '../shared.js';
 
 export const STALE_DAYS = 90;
 export { SCHEME_NAMES };
@@ -74,53 +75,6 @@ function formatValue(key, leaf) {
   }
   if (leaf?.value == null) return null;
   return f(leaf.value);
-}
-
-// ---------- пути к листьям в правках ----------
-// path — массив шагов: строка = ключ объекта, {id} = элемент массива по id.
-
-function getAt(root, path) {
-  let cur = root;
-  for (const step of path) {
-    if (cur == null) return undefined;
-    cur = typeof step === 'string' ? cur[step] : (Array.isArray(cur) ? cur.find((x) => x && x.id === step.id) : undefined);
-  }
-  return cur;
-}
-
-function setAt(root, path, leaf) {
-  let cur = root;
-  path.forEach((step, i) => {
-    const last = i === path.length - 1;
-    const nextIsArr = !last && typeof path[i + 1] !== 'string';
-    if (typeof step === 'string') {
-      if (last) cur[step] = leaf;
-      else cur = cur[step] ??= nextIsArr ? [] : {};
-    } else {
-      let item = cur.find((x) => x && x.id === step.id);
-      if (!item) { item = { id: step.id }; cur.push(item); }
-      cur = item;
-    }
-  });
-}
-
-function removeAt(root, path) {
-  const parent = getAt(root, path.slice(0, -1));
-  const last = path[path.length - 1];
-  if (parent && typeof last === 'string') delete parent[last];
-  // подчистить пустые контейнеры снизу вверх
-  for (let n = path.length - 1; n > 0; n--) {
-    const p = path.slice(0, n);
-    const node = getAt(root, p);
-    const empty = node && typeof node === 'object' && Object.keys(node).filter((k) => k !== 'id').length === 0;
-    if (!empty) break;
-    const holder = getAt(root, p.slice(0, -1));
-    const step = p[p.length - 1];
-    if (typeof step === 'string') delete holder[step];
-    else holder.splice(holder.indexOf(node), 1);
-  }
-  if (Array.isArray(root.categories) && !root.categories.length) delete root.categories;
-  if (Array.isArray(root.logistics) && !root.logistics.length) delete root.logistics;
 }
 
 // ---------- экран ----------
@@ -216,12 +170,17 @@ function parsePercentOrNumber(raw, isShare) {
   return { value: isShare ? n / 100 : n };
 }
 
-async function save(el, message) {
-  state.overrides.edited = today();
+/**
+ * op(свежие правки, дата) → новые правки; пишется через api.update поверх чужих изменений.
+ * Ошибка: errEl задан — текст в нём, введённое в форме остаётся; иначе — сообщение над таблицей.
+ */
+async function save(el, message, op, errEl = null) {
   try {
-    await api.saveData('tariffs', state.overrides);
+    state.overrides = (await api.update('tariffs', (cur) => op(cur || {}, today()))) || {};
   } catch (e) {
-    draw(el, `<span class="error">Не сохранилось: ${escapeHtml(e.message)}</span>`);
+    const text = `Не сохранилось: ${e.message}`;
+    if (errEl) { errEl.textContent = text; errEl.hidden = false; return; }
+    draw(el, `<span class="error">${escapeHtml(text)}</span>`);
     return;
   }
   state.tariffs = mergeTariffs(state.defaults, state.overrides);
@@ -251,19 +210,17 @@ function bind(el) {
       const newLeaf = { value: p.value, source: 'моя правка (из кабинета)', checked: today() };
       if (!isShare && leaf.unit) newLeaf.unit = leaf.unit;
       if (isShare && leaf.unit && leaf.bands) newLeaf.unit = leaf.unit;
-      setAt(state.overrides, r.path, newLeaf);
-      save(el, 'Сохранено.');
+      save(el, 'Сохранено.', (cur, d) => setTariffLeaf(cur, r.path, newLeaf, d), f.querySelector('.field-error'));
     });
   }));
   el.querySelectorAll('[data-reset]').forEach((b) => b.addEventListener('click', () => {
-    removeAt(state.overrides, flatRows[+b.dataset.reset].path);
-    save(el, 'Вернули исходную цифру.');
+    const path = flatRows[+b.dataset.reset].path;
+    save(el, 'Вернули исходную цифру.', (cur, d) => resetTariffLeaf(cur, path, d));
   }));
   el.querySelectorAll('[data-delcat]').forEach((b) => b.addEventListener('click', () => {
     if (!confirm('Удалить свою категорию?')) return;
-    state.overrides.categories = (state.overrides.categories || []).filter((c) => c.id !== b.dataset.delcat);
-    if (!state.overrides.categories.length) delete state.overrides.categories;
-    save(el, 'Категория удалена.');
+    const id = b.dataset.delcat;
+    save(el, 'Категория удалена.', (cur, d) => removeTariffCategory(cur, id, d));
   }));
   const form = el.querySelector('.addcat');
   form.addEventListener('submit', (e) => {
@@ -276,7 +233,8 @@ function bind(el) {
     const bad = !name ? [form.name, 'Введите название'] : rf.error ? [form.rfbs, rf.error] : fb.error ? [form.fbp, fb.error] : null;
     if (bad) { bad[0].classList.add('invalid'); er.textContent = bad[1]; er.hidden = false; return; }
     const leaf = (v) => (v == null ? { value: null, source: null, checked: null, note: 'нет данных — впишите из кабинета' } : { value: v, source: 'моя правка (из кабинета)', checked: today() });
-    (state.overrides.categories ??= []).push({ id: 'my-' + Date.now().toString(36), name, custom: true, rfbs: leaf(rf.value), fbp: leaf(fb.value) });
-    save(el, `Категория «${escapeHtml(name)}» добавлена — она есть в калькуляторе.`);
+    er.hidden = true;
+    const cat = { id: 'my-' + Date.now().toString(36), name, custom: true, rfbs: leaf(rf.value), fbp: leaf(fb.value) };
+    save(el, `Категория «${escapeHtml(name)}» добавлена — она есть в калькуляторе.`, (cur, d) => addTariffCategory(cur, cat, d), er);
   });
 }

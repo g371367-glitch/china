@@ -2,12 +2,15 @@
 
 Только стандартная библиотека. Слушает 127.0.0.1. Запуск: python app/server.py
 """
+import contextlib
+import hashlib
 import json
 import os
 import socket
 import sys
 import tempfile
 import threading
+import time
 import urllib.parse
 import urllib.request
 import webbrowser
@@ -129,19 +132,113 @@ def data_path(root, name):
     return os.path.join(root, "data", name + ".json")
 
 
-def read_data(root, name):
-    """JSON из data/<name>.json или None, если файла нет."""
+LOCK_TIMEOUT = 5  # секунд ждать замок записи, затем DataBusy
+NO_FILE_ETAG = '"none"'
+
+
+class DataConflict(Exception):
+    """If-Match не совпал с текущей версией файла."""
+
+
+class DataBusy(Exception):
+    """Замок записи не взят за LOCK_TIMEOUT."""
+
+
+def _etag(raw):
+    return '"' + hashlib.sha256(raw).hexdigest()[:16] + '"'
+
+
+def _read_raw(root, name):
+    """Байты data/<name>.json или None, если файла нет."""
     try:
-        with open(data_path(root, name), encoding="utf-8-sig") as f:
-            return json.load(f)
+        with open(data_path(root, name), "rb") as f:
+            return f.read()
     except FileNotFoundError:
         return None
 
 
-def write_data(root, name, value):
-    """Атомарная запись: временный файл рядом → os.replace."""
-    path = data_path(root, name)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
+def _decode(raw):
+    return json.loads(raw.decode("utf-8-sig"))
+
+
+def read_data(root, name):
+    """JSON из data/<name>.json или None, если файла нет."""
+    raw = _read_raw(root, name)
+    return None if raw is None else _decode(raw)
+
+
+def etag_of(root, name):
+    """Версия файла: '"<16 hex sha256 содержимого>"', нет файла → '"none"'."""
+    raw = _read_raw(root, name)
+    return NO_FILE_ETAG if raw is None else _etag(raw)
+
+
+def read_data_versioned(root, name):
+    """(значение | None, etag) — из одного чтения файла."""
+    raw = _read_raw(root, name)
+    if raw is None:
+        return None, NO_FILE_ETAG
+    return _decode(raw), _etag(raw)
+
+
+@contextlib.contextmanager
+def _data_lock(root, name, timeout=None):
+    """Межпроцессный замок записи на файл data/.<name>.lock; не взят за timeout → DataBusy."""
+    timeout = LOCK_TIMEOUT if timeout is None else timeout
+    folder = os.path.dirname(data_path(root, name))
+    os.makedirs(folder, exist_ok=True)
+    f = open(os.path.join(folder, f".{name}.lock"), "a+b")
+    try:
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                _lock_file(f)
+                break
+            except OSError:
+                if time.monotonic() >= deadline:
+                    raise DataBusy(name) from None
+                time.sleep(0.05)
+        try:
+            yield
+        finally:
+            _unlock_file(f)
+    finally:
+        f.close()
+
+
+if os.name == "nt":
+    import msvcrt
+
+    def _lock_file(f):
+        f.seek(0)
+        msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+
+    def _unlock_file(f):
+        f.seek(0)
+        msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+else:
+    import fcntl
+
+    def _lock_file(f):
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    def _unlock_file(f):
+        fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+
+
+def write_data(root, name, value, if_match=None):
+    """Атомарная запись под замком: временный файл рядом → os.replace.
+
+    if_match задан и не равен текущей версии → DataConflict, файл не тронут.
+    Замок не взят за LOCK_TIMEOUT → DataBusy.
+    """
+    with _data_lock(root, name):
+        if if_match is not None and if_match != etag_of(root, name):
+            raise DataConflict(name)
+        _write_atomic(data_path(root, name), value, name)
+
+
+def _write_atomic(path, value, name):
     fd, tmp = tempfile.mkstemp(prefix=f".{name}.", suffix=".tmp", dir=os.path.dirname(path))
     try:
         with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
@@ -201,11 +298,13 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         super().end_headers()
 
-    def send_json(self, data, status=200):
+    def send_json(self, data, status=200, headers=None):
         body = json.dumps(data, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
+        for k, v in (headers or {}).items():
+            self.send_header(k, v)
         self.end_headers()
         self.wfile.write(body)
 
@@ -242,9 +341,10 @@ class Handler(SimpleHTTPRequestHandler):
             if name not in DATA_READ:
                 return self.send_json({"error": "Нет таких данных"}, 404)
             try:
-                return self.send_json(read_data(self.root, name))
+                value, etag = read_data_versioned(self.root, name)
             except ValueError:
                 return self.send_json({"error": f"Файл data/{name}.json повреждён"}, 500)
+            return self.send_json(value, headers={"ETag": etag})
         if path.startswith("/api/"):
             return self.send_json({"error": "Не найдено"}, 404)
         return super().do_GET()
@@ -263,7 +363,13 @@ class Handler(SimpleHTTPRequestHandler):
             value = json.loads(raw.decode("utf-8"))
         except (ValueError, UnicodeDecodeError):
             return self.send_json({"error": "Тело запроса — не JSON"}, 400)
-        write_data(self.root, name, value)
+        if_match = self.headers.get("If-Match")
+        try:
+            write_data(self.root, name, value, if_match=if_match.strip() if if_match else None)
+        except DataConflict:
+            return self.send_json({"error": "Данные изменились — обновите"}, 409)
+        except DataBusy:
+            return self.send_json({"error": "Данные заняты — попробуйте ещё раз"}, 503)
         return self.send_json({"ok": True})
 
 

@@ -19,14 +19,42 @@ async function handle(res) {
   return body;
 }
 
-async function request(path, options) {
-  let res;
+async function send(path, options) {
   try {
-    res = await fetch('/api/' + path.replace(/^\/+/, ''), { cache: 'no-store', ...options });
+    return await fetch('/api/' + path.replace(/^\/+/, ''), { cache: 'no-store', ...options });
   } catch {
     throw new ApiError('Нет связи с сайтом — запущен ли «Запустить.bat»?', 0);
   }
-  return handle(res);
+}
+
+async function request(path, options) {
+  return handle(await send(path, options));
+}
+
+export const CONFLICT_MESSAGE = 'Данные одновременно меняет кто-то ещё — попробуйте ещё раз';
+
+/**
+ * Правка поверх свежих данных: GET с версией (ETag) → fn(текущее) → PUT с If-Match.
+ * На 409 (кто-то записал между чтением и записью) — заново, до retries попыток,
+ * затем ApiError 409 CONFLICT_MESSAGE. fn может быть async; получает null, если файла нет.
+ * → записанное значение.
+ */
+export async function update(name, fn, { retries = 3 } = {}) {
+  for (let attempt = 0; attempt < retries; attempt++) {
+    const res = await send('data/' + name);
+    const current = await handle(res);
+    const etag = res.headers.get('ETag');
+    const next = await fn(current);
+    const headers = { 'Content-Type': 'application/json; charset=utf-8' };
+    if (etag) headers['If-Match'] = etag;
+    try {
+      await request('data/' + name, { method: 'PUT', headers, body: JSON.stringify(next) });
+      return next;
+    } catch (e) {
+      if (!(e instanceof ApiError) || e.status !== 409) throw e;
+    }
+  }
+  throw new ApiError(CONFLICT_MESSAGE, 409);
 }
 
 /** GET /api/<path> → JSON (или текст для text/markdown). Бросает ApiError. */
@@ -52,8 +80,10 @@ export const api = {
   search: (q) => get('search?q=' + encodeURIComponent(q)),
   /** name ∈ products, tariffs, tariffs.default, settings, calendar; нет файла → null */
   data: (name) => get('data/' + name),
-  /** name ∈ products, tariffs, settings */
+  /** name ∈ products, tariffs, settings. Перезапись целиком — экраны пишут через update. */
   saveData: (name, value) => put('data/' + name, value),
+  /** name ∈ products, tariffs, settings; fn(текущее) → новое; → Promise<записанное>. Повтор на 409. */
+  update,
   /** {rate, date, source:'cbr'}; при ошибке — ApiError со status 502 */
   rate: () => get('rate'),
 };

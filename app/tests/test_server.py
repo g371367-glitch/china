@@ -186,7 +186,8 @@ class Data(ServerCase):
         # перезапись, а не дописывание; временных файлов не остаётся
         self.put("products", [])
         self.assertEqual(self.get_json("/api/data/products"), [])
-        self.assertEqual(sorted(os.listdir(os.path.join(self.root, "data"))), ["products.json", "x.md"])
+        left = [n for n in os.listdir(os.path.join(self.root, "data")) if not n.endswith(".lock")]
+        self.assertEqual(sorted(left), ["products.json", "x.md"])
 
     def test_put_only_whitelisted(self):
         for name in ["tariffs.default", "calendar", "secrets", "../products", "products.json"]:
@@ -216,6 +217,123 @@ class Data(ServerCase):
         status, _, _ = self.put("tariffs", {"edited": "2026-09-28"})
         self.assertEqual(status, 200)
         self.assertEqual(self.get_json("/api/data/tariffs"), {"edited": "2026-09-28"})
+
+
+class Versions(ServerCase):
+    """Версия данных: ETag на чтение, If-Match на запись (истории 16–18)."""
+
+    def call(self, path, method="GET", body=None, headers=None):
+        url = f"http://127.0.0.1:{self.port}{path}"
+        if body is not None and not isinstance(body, bytes):
+            body = json.dumps(body, ensure_ascii=False).encode("utf-8")
+        req = urllib.request.Request(url, data=body, method=method, headers=headers or {})
+        try:
+            with OPENER.open(req, timeout=15) as r:
+                return r.status, r.headers, r.read().decode("utf-8")
+        except urllib.error.HTTPError as e:
+            with e:
+                return e.code, e.headers, e.read().decode("utf-8")
+
+    def test_etag_is_quoted_sha256_prefix_of_file_or_none(self):
+        status, headers, _ = self.call("/api/data/products")
+        self.assertEqual(status, 200)
+        self.assertEqual(headers.get("ETag"), '"none"')
+        raw = '[{"id": "a"}]\n'.encode("utf-8")
+        os.makedirs(os.path.join(self.root, "data"), exist_ok=True)
+        with open(os.path.join(self.root, "data", "products.json"), "wb") as f:
+            f.write(raw)
+        import hashlib
+        expected = '"' + hashlib.sha256(raw).hexdigest()[:16] + '"'
+        status, headers, _ = self.call("/api/data/products")
+        self.assertEqual(headers.get("ETag"), expected)
+
+    def test_put_with_matching_if_match_writes_and_changes_etag(self):
+        _, h0, _ = self.call("/api/data/settings")
+        status, _, text = self.call("/api/data/settings", "PUT", {"rate": 12}, {"If-Match": h0["ETag"]})
+        self.assertEqual((status, json.loads(text)), (200, {"ok": True}))
+        _, h1, body = self.call("/api/data/settings")
+        self.assertEqual(json.loads(body), {"rate": 12})
+        self.assertNotEqual(h1["ETag"], h0["ETag"])
+
+    def test_put_with_stale_if_match_is_409_and_keeps_data(self):
+        _, h0, _ = self.call("/api/data/products")
+        self.call("/api/data/products", "PUT", [{"id": "чужой"}], {"If-Match": h0["ETag"]})
+        status, _, text = self.call("/api/data/products", "PUT", [{"id": "мой"}], {"If-Match": h0["ETag"]})
+        self.assertEqual(status, 409)
+        self.assertEqual(json.loads(text), {"error": "Данные изменились — обновите"})
+        self.assertEqual(self.get_json("/api/data/products"), [{"id": "чужой"}])
+
+    def hold_lock(self, name):
+        """Как будто другой процесс сервера пишет: держим data/.<name>.lock."""
+        os.makedirs(os.path.join(self.root, "data"), exist_ok=True)
+        f = open(os.path.join(self.root, "data", f".{name}.lock"), "a+b")
+        if os.name == "nt":
+            import msvcrt
+            f.seek(0)
+            msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+
+            def release():
+                f.seek(0)
+                msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+                f.close()
+        else:
+            import fcntl
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+            def release():
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+                f.close()
+        return release
+
+    def test_write_waits_for_lock_held_by_other_process(self):
+        release = self.hold_lock("products")
+        result = {}
+
+        def put():
+            result["status"] = self.call("/api/data/products", "PUT", [{"id": "x"}])[0]
+            result["at"] = time.monotonic()
+
+        t = threading.Thread(target=put)
+        t.start()
+        time.sleep(0.6)
+        self.assertNotIn("status", result, "запись не дождалась замка")
+        self.assertIsNone(server.read_data(self.root, "products"))
+        released_at = time.monotonic()
+        release()
+        t.join(10)
+        self.assertEqual(result.get("status"), 200)
+        self.assertGreaterEqual(result["at"], released_at)
+        self.assertEqual(self.get_json("/api/data/products"), [{"id": "x"}])
+
+    def test_lock_timeout_is_503_and_keeps_data(self):
+        self.call("/api/data/settings", "PUT", {"rate": 1})
+        release = self.hold_lock("settings")
+        old = server.LOCK_TIMEOUT
+        server.LOCK_TIMEOUT = 0.3
+        try:
+            status, _, text = self.call("/api/data/settings", "PUT", {"rate": 2})
+        finally:
+            server.LOCK_TIMEOUT = old
+            release()
+        self.assertEqual(status, 503)
+        self.assertEqual(json.loads(text), {"error": "Данные заняты — попробуйте ещё раз"})
+        self.assertEqual(self.get_json("/api/data/settings"), {"rate": 1})
+
+    def test_versioned_functions(self):
+        self.assertEqual(server.read_data_versioned(self.root, "products"), (None, '"none"'))
+        server.write_data(self.root, "products", [1])
+        value, etag = server.read_data_versioned(self.root, "products")
+        self.assertEqual((value, etag), ([1], server.etag_of(self.root, "products")))
+        with self.assertRaises(server.DataConflict):
+            server.write_data(self.root, "products", [2], if_match='"none"')
+        server.write_data(self.root, "products", [3], if_match=etag)
+        self.assertEqual(server.read_data(self.root, "products"), [3])
+
+    def test_put_without_if_match_writes_as_before(self):
+        self.call("/api/data/tariffs", "PUT", {"edited": "1"})
+        status, _, _ = self.call("/api/data/tariffs", "PUT", {"edited": "2"})
+        self.assertEqual(status, 200)
+        self.assertEqual(self.get_json("/api/data/tariffs"), {"edited": "2"})
 
 
 class FakeCbr(server.ThreadingHTTPServer):

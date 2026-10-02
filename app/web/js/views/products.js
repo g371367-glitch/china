@@ -2,9 +2,11 @@
 // data/products.json — массив {id, name, link1688, note, input, scheme, createdAt, updatedAt};
 // input — как у calc.computeUnit (цена в ¥), scheme — лучшая схема на момент сохранения.
 // Выбранная на экране схема хранится в settings.defaultScheme (запись слиянием).
+// Удаление — операцией над свежим products.json (api.update): добавленное коллегой в это время не пропадёт.
 //
 // Чистые функции (без DOM, тестируются в app/tests/products.test.mjs):
 //   upsertProduct(list, product, nowIso) → новый список (тот же id — обновление на месте, иначе добавление)
+//   deleteProduct(list, id) → новый список без записи id
 //   computeRow(product, scheme, tariffs, settings) → {…product, scheme, price, cost, profit, margin, roi, incomplete}
 //     (логистика не выбрана → calc.defaultLogistics, как «Авто» в калькуляторе)
 //   toCsv(rows, {rate}) → строка CSV для русского Excel (BOM, «;», десятичная запятая, CRLF)
@@ -32,6 +34,10 @@ export function upsertProduct(list, product, nowIso = new Date().toISOString()) 
     return out;
   }
   return [...items, { ...product, id: newId(), createdAt: nowIso, updatedAt: nowIso }];
+}
+
+export function deleteProduct(list, id) {
+  return (Array.isArray(list) ? list : []).filter((p) => p.id !== id);
 }
 
 export function computeRow(product, scheme, tariffs, settings) {
@@ -97,7 +103,7 @@ export async function render(el, ctx) {
 
   async function saveScheme(s) {
     try {
-      await saveSettingsPatch({ defaultScheme: s });
+      Object.assign(settings, withSettingsDefaults(await saveSettingsPatch({ defaultScheme: s })), { defaultScheme: scheme });
     } catch { /* выбор схемы не критичен */ }
   }
 
@@ -178,10 +184,8 @@ export async function render(el, ctx) {
     el.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', async () => {
       const p = products.find((x) => x.id === b.dataset.del);
       if (!p || !window.confirm(`Удалить товар «${p.name || 'без названия'}» из списка?`)) return;
-      const next = products.filter((x) => x.id !== p.id);
       try {
-        await api.saveData('products', next);
-        products = next;
+        products = await api.update('products', (cur) => deleteProduct(cur, p.id));
         draw();
       } catch (e) {
         el.querySelector('#products-msg').innerHTML = `<span class="error">Не удалилось: ${escapeHtml(e.message)}</span>`;

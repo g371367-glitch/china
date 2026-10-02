@@ -8,3 +8,6 @@ __pycache__/
 data/products.json
 data/settings.json
 data/tariffs.json
+data/.*.lock
+data/access.json
+tools/

@@ -63,7 +63,8 @@ export async function render(el) {
 async function saveSettings(patch) {
   Object.assign(S.settings, patch);
   try {
-    await saveSettingsPatch(patch);
+    const saved = await saveSettingsPatch(patch);
+    Object.assign(S.settings, withSettingsDefaults(saved), patch); // свежие поля коллег + своё
     return true;
   } catch (e) {
     setRateMsg(`<span class="error">Настройки не сохранились: ${escapeHtml(e.message)}</span>`);
@@ -439,11 +440,14 @@ async function saveProduct() {
   const st = getCalcState();
   if (!st) { msg('<span class="error">Сначала заполните товар без ошибок — сохраняется посчитанный товар.</span>'); return; }
   try {
-    const list = (await api.data('products')) || [];
-    const product = { name, link1688: saveForm.link1688.trim(), note: saveForm.note.trim(), input: st.input, scheme: st.scheme };
-    if (saveForm.id && list.some((p) => p.id === saveForm.id)) product.id = saveForm.id;
-    const updating = !!product.id;
-    await api.saveData('products', upsertProduct(list, product));
+    let updating = false;
+    // Операция над свежим списком: чужие товары, добавленные или удалённые в это время, не затираются.
+    await api.update('products', (list) => {
+      const product = { name, link1688: saveForm.link1688.trim(), note: saveForm.note.trim(), input: st.input, scheme: st.scheme };
+      updating = !!(saveForm.id && (list || []).some((p) => p.id === saveForm.id));
+      if (updating) product.id = saveForm.id;
+      return upsertProduct(list, product);
+    });
     saveForm = { id: null, name: '', link1688: '', note: '' };
     draw();
     S.el.querySelector('#save-msg').innerHTML = `${updating ? 'Товар обновлён' : 'Сохранено'} — <a href="#/products">открыть «Мои товары»</a>.${st.incomplete ? ' <span class="nodata">Расчёт неполный: в списке он будет помечен.</span>' : ''}`;
