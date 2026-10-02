@@ -11,8 +11,10 @@
 cd "C:/Users/P famly/Desktop/claude/china"
 python app/server.py                                   # сайт на http://127.0.0.1:8765 (для владельца — двойной клик по Запустить.bat)
 TRADE_KB_NO_BROWSER=1 python app/server.py             # то же без открытия браузера
-node --test app/tests/                                 # все JS-тесты (calc, calendar, products)
-python -m unittest discover -s app/tests               # все тесты сервера
+python app/team.py                                     # «Доступ для коллег»: пароль + сайт коллег + туннель (интерактивно)
+python app/team.py --set-password                      # только сменить общий пароль (пишет data/access.json)
+node --test app/tests/                                 # все JS-тесты (50)
+PYTHONUTF8=1 python -m unittest discover -s app/tests  # все Python-тесты (80, ~50 с)
 ```
 
 Только стандартная библиотека Python и ванильный JS: без pip, без npm, без сборки.
@@ -24,32 +26,46 @@ python -m unittest discover -s app/tests               # все тесты се�
 Южная_Америка/, Торговый_дом/   заметки .md — сайт находит их сам, реестра нет
 README.md                       оглавление + сводный календарь сроков (с ним сверяется data/calendar.json)
 Журнал_изменений.md             «было → стало» по заметкам; есть файл — есть пункт меню «Что изменилось»
+Доступ_для_коллег.md            инструкция владельцу по доступу для коллег (сама тоже заметка сайта)
 Запустить.bat                   ищет Python 3 и запускает app/server.py
-app/server.py                   HTTP-сервер: статика app/web/ + /api/*
+Доступ для коллег.bat           то же → app\team.py; Сменить пароль.bat → app\team.py --set-password
+app/server.py                   HTTP-сервер: статика app/web/ + /api/*, данные с ETag и замком, вход для коллег
+app/auth.py                     общий пароль (PBKDF2), токены сессии (HMAC), защита от перебора
+app/team.py                     «Доступ для коллег»: cloudflared, туннель, второй сервер с паролем
 app/web/index.html              оболочка, подключает vendor/marked-12.0.2.min.js (window.marked)
-app/web/js/                     api.js, app.js (роутер), calc.js, calendar.js — логика без DOM
+app/web/login.html              страница входа сайта коллег
+app/web/js/                     api.js, app.js (роутер), calc.js, calendar.js, shared.js — логика без DOM
 app/web/js/views/               экраны: home, docs, search, calc, products, tariffs
-app/tests/                      *.test.mjs (node) + test_server.py (unittest)
-data/                           tariffs.default.json, calendar.json; данные пользователя создаются при работе
+app/tests/                      node: calc, calendar, products, shared, update, auth (*.test.mjs); unittest: test_server, test_auth, test_team
+data/                           tariffs.default.json, calendar.json; данные пользователя и access.json создаются при работе
+tools/                          сюда team.py скачивает cloudflared.exe (в .gitignore, создаётся при работе)
 ```
 
 ## Ключевые файлы
 
-- `app/server.py` — `make_server(root, host, port, rate_url)`, `choose_port(start) → (port, already_running)`, `list_docs`, `resolve_doc`, `search`, `read_data`, `write_data`, `fetch_rate`.
-- `app/web/js/api.js` — единственный клиент API, свой `fetch` не писать: `api.{ping, docs, doc(path), search(q), data(name), saveData(name, value), rate()}`, ошибки — `ApiError{message, status}`.
+- `app/server.py` — `make_server(root, host, port, rate_url, access=None, team_info=None)`, `choose_port(start) → (port, already_running)`, `DEFAULT_PORT=8765`, `list_docs`, `resolve_doc`, `search`, `fetch_rate`; данные: `read_data(root,name) → value|None`, `read_data_versioned → (value, etag)`, `etag_of → '"<16 hex>"'|'"none"'`, `write_data(root,name,value,if_match=None)` → `DataConflict` | `DataBusy` (`LOCK_TIMEOUT=5` с); `SESSION_COOKIE="kb_session"`, `OPEN_PATHS`.
+- `app/auth.py` — `Access(root, clock=time.time)`: `configured()`, `set_password(pw)` (ValueError по-русски), `check_password(pw)`, `issue() → "<unix>.<HMAC base64url>"`, `verify(token)`; `LoginLimiter(clock=time.monotonic)`: `check(ip) → (ok, retry_s)`, `failure(ip)`, `success(ip)` (в памяти процесса; 5 ошибок с IP / 30 всего за 15 мин → блок 15 мин); `MIN_PASSWORD=8`, `SESSION_DAYS=30`.
+- `app/team.py` — `main(argv=None, root, say=print, ask=input) → код выхода`; `find_cloudflared(root)` (`tools/cloudflared.exe`, затем PATH), `download_cloudflared(root, progress=None, url, timeout=30)`, `Tunnel(exe, port, command=None)`: `start(timeout=40) → url`, `alive()`, `stop()`; `parse_tunnel_url(line)`; `ask_password`, `copy_to_clipboard`, `on_close`; ошибки — `TeamError`; `TEAM_PORT=8766`.
+- `app/web/js/api.js` — единственный клиент API, свой `fetch` не писать: `api.{ping, docs, doc(path), search(q), data(name), update(name, fn, {retries:3}), rate(), team(), logout()}`; `update` = GET с ETag → `fn(текущее)` → PUT с If-Match, повтор только на 409, без ETag → `ApiError(NO_VERSION_MESSAGE)`; любой 401 → переход на `/login`; ошибки — `ApiError{message, status}`. `api.saveData` (перезапись вслепую) экранами не используется.
+- `app/web/js/shared.js` — `SCHEMES`, `SCHEME_NAMES`, `LINE_LABELS/ORDER`, `incompleteText`, `withSettingsDefaults`, `applySettingsPatch(cur, patch)`, `saveSettingsPatch(patch)` (через `api.update`), `setTariffLeaf/resetTariffLeaf/addTariffCategory/removeTariffCategory(ov, …, date)` → новый объект с `edited=date`, `parseNum(raw) → {n}|{empty}|{bad}`.
 - `app/web/js/app.js` — `ROUTES [{path, menu?, title, view: () => Promise<render(el, ctx)>, alias?}]`; `'doc/*'` → `ctx.params.rest`; `ctx = {params, query, docs, navigate}`; хелперы `escapeHtml`, `docHash`, `folderLabel`, `groupDocs`, `navigate`.
 - `app/web/js/calc.js` — `computeUnit(input, scheme, tariffs, settings) → {lines:[{key,label,cny,source?,checked?,note?,own?}], revenue, cost, profit, margin, roi, incomplete:[keys], warnings:['dutyFree']}`; `priceForMargin` / `breakeven → {price, margin, incomplete} | {unreachable:true, reason}`; `compareSchemes → {A,B,C,D, best, incomplete, comparable}`; `mergeTariffs(defaults, overrides)`; `chargeableWeight(input, divisor)`.
 - `app/web/js/calendar.js` — `upcoming(events, today, settings, count=8) → [{date|null, country, what, who, when?, important?, soon, needsRegistrationDate}]`, `SOON_DAYS=30`; заглушка «впишите дату регистрации» идёт первой и вне `count`.
 - `app/web/js/views/calc.js` — `getCalcState()`, `setCalcInput(input)`, `editProduct(product)` (следующее «Сохранить в список» обновляет ту же запись).
-- `app/web/js/views/products.js` — без DOM на уровне импорта: `upsertProduct`, `computeRow`, `toCsv(rows, {rate})`, `incompleteText(keys)`.
+- `app/web/js/views/products.js` — без DOM на уровне импорта: `upsertProduct`, `deleteProduct(list, id)`, `computeRow`, `toCsv(rows, {rate})`, `incompleteText(keys)`.
 - `app/web/js/views/tariffs.js` — `loadTariffs() → {defaults, overrides, tariffs}`, `isStale(checked)` (`STALE_DAYS=90`), `sourceHtml`, `leafTip`, `SCHEME_NAMES`.
 - `data/tariffs.default.json` — тарифы из исследования; человекочитаемая копия — `Азия/Китай/05_Тарифы_Ozon_Global.md` (ключ строки = путь листа: `cat.home.rfbs`, `fees.dutyFreeLimit`).
 
 ## Архитектура
 
 - Браузер → `api.js` → `server.py` → диск (`*.md`, `data/*.json`) или ЦБ (`https://www.cbr-xml-daily.ru/daily_json.js`); сервер слушает только 127.0.0.1.
-- API: `GET /api/ping → {app:"trade-kb", version}`, `/api/docs`, `/api/doc?path=` (text/markdown, 404 вне папок знаний), `/api/search?q=` (без регистра, ё=е, ≥2 символа), `/api/rate → {rate, date, source:"cbr"}` или 502.
-- `GET /api/data/<name>`: products, tariffs, tariffs.default, settings, calendar; нет файла → `null`. `PUT` — только products, tariffs, settings → `{ok:true}`; запись атомарная (временный файл → `os.replace`).
+- Два режима одного `Handler`: локальный (`access=None`, без пароля, порт 8765+) и сайт коллег (`access=auth.Access`, порт 8766+), который `team.py` поднимает рядом и выводит наружу через `cloudflared tunnel --url` → `https://<x>.trycloudflare.com` (меняется при каждом запуске).
+- Сайт коллег без cookie: открыты `GET /login`, `GET /css/style.css`, `POST /api/login {password}` (→ `{ok}`+cookie | 401 | 429 + `Retry-After`), `POST /api/logout`; прочие не-API GET → 303 `/login`, `/api/*` → 401 `{"error":"Нужно войти"}`.
+- Cookie `kb_session`: HttpOnly, SameSite=Lax, Max-Age 30 дней; Secure, если `X-Forwarded-Proto: https` или `Cf-Visitor` с https. Смена пароля меняет `epoch`/`secret` → все сессии сбрасываются.
+- `data/access.json`: `{version, salt, hash, iterations, epoch, secret, changedAt}` (hex), читается при каждой проверке; создаёт только `team.py` (ввод пароля), значения не печатать.
+- API: `GET /api/ping → {app:"trade-kb", version, team:bool}` (`team:true` → в меню пункт «Выйти»), `/api/team` (только локальный: `{active:true, url}` | `{active:false}`; у коллег 404), `/api/docs`, `/api/doc?path=` (text/markdown, 404 вне папок знаний), `/api/search?q=` (без регистра, ё=е, ≥2 символа), `/api/rate → {rate, date, source:"cbr"}` или 502.
+- `GET /api/data/<name>`: products, tariffs, tariffs.default, settings, calendar; нет файла → `null`; заголовок `ETag: "<16 hex sha256>"` (нет файла → `"none"`). `PUT` — только products, tariffs, settings; с `If-Match` → `{ok:true}` | 409 (версия устарела) | 503 (замок не взят за 5 с); без `If-Match` — запись вслепую. Запись: межпроцессный замок `data/.<name>.lock` (msvcrt/fcntl) → временный файл → `os.replace`.
+- Все записи экранов — операцией над свежими данными через `api.update` (`saveSettingsPatch`, `upsertProduct`/`deleteProduct`, `setTariffLeaf`…): правки коллег не затираются.
 - Заметки = все `.md` в корне и папках; пропускаются скрытые папки, `node_modules`, в корне — `app`, `data`, `.autopilot`, `.claude` и файлы `CLAUDE.md`/`AGENTS.md`.
 - Новый экран = запись в `ROUTES` + модуль в `views/` с `render(el, ctx)`.
 - Расчёты только через `calc.js`/`calendar.js` (чистые функции); экраны их не дублируют.
@@ -75,8 +91,9 @@ data/                           tariffs.default.json, calendar.json; данны�
 
 ## Тесты
 
-- Один JS-файл: `node --test app/tests/calc.test.mjs` (или `calendar.test.mjs`, `products.test.mjs`).
-- Один Python-файл: `python -m unittest discover -s app/tests -p test_server.py` (~17 с: поднимает сервер на свободном порту с временным корнем).
+- Один JS-файл: `node --test app/tests/calc.test.mjs` (или `calendar`, `products`, `shared`, `update`, `auth`); `update`/`auth` подменяют `globalThis.fetch`.
+- Один Python-файл: `PYTHONUTF8=1 python -m unittest discover -s app/tests -p test_server.py` (~24 с: сервер на свободном порту с временным корнем), `-p test_auth.py` (~11 с), `-p test_team.py` (~12 с: вместо cloudflared — скрипт-заглушка через `Tunnel(command=…)`).
+- Время входа и блокировок — через подставные часы (`clock=`), не `sleep`.
 - Новый JS-тест — просто `*.test.mjs` в `app/tests/`, `index.js` подхватит его сам.
 - `calc.fixture.mjs` — свои числа для ручного счёта, с `data/tariffs.default.json` не связаны.
 - `calendar.test.mjs` сверяет `data/calendar.json` с таблицей сводного календаря в `README.md`: правишь одно — правь другое.
@@ -84,12 +101,13 @@ data/                           tariffs.default.json, calendar.json; данны�
 ## Подводные камни
 
 - `node --test app/tests/` работает через `app/tests/index.js`: Node 22+ считает каталог модулем и ищет в нём index.js.
-- `app/web/js/calc.js`, `app/web/js/views/calc.js` и `Запустить.bat` — с переводами строк CRLF, остальные файлы LF; `core.autocrlf=false`, `.gitattributes` нет — формат при правке сохраняй.
-- `settings.json` пишется только слиянием с текущим файлом (`{...cur, ...patch}`), иначе затрутся чужие поля, например `registrationDate`.
+- `app/web/js/calc.js`, `app/web/js/views/calc.js` и все `*.bat` — с переводами строк CRLF, остальные файлы LF; `core.autocrlf=false`, `.gitattributes` нет — формат при правке сохраняй.
+- `settings.json` пишется только через `saveSettingsPatch` (`api.update` + слияние `{...cur, ...patch}`), иначе затрутся чужие поля, например `registrationDate`.
 - Все `logistics[].fixed/perGram` в `data/tariffs.default.json` сейчас `null` → любой расчёт помечен «неполный», пока пользователь не впишет свои тарифы; при `comparable:false` лучшая схема — не вывод.
-- `data/settings.json`, `products.json`, `tariffs.json` — личные данные владельца и не в `.gitignore`; не добавлять их в коммит без спроса.
+- `data/settings.json`, `products.json`, `tariffs.json`, `access.json`, `data/.*.lock`, `tools/` — в `.gitignore`; личные данные в настоящем корне не трогать (тесты — на временном корне).
+- `team.py` без нужды не запускать: скачивает cloudflared (~60 МБ), открывает сайт в интернет, первый запуск спрашивает пароль и пишет `data/access.json`.
 - Python в Git Bash печатает в cp1251: вывод с `¥`/кириллицей падает `UnicodeEncodeError` — запускай с `PYTHONUTF8=1`.
-- Порт 8765 занят нашим же сервером → второй запуск только открывает браузер; занят чужим → берётся следующий свободный.
+- Порт 8765 занят нашим же сервером → второй запуск только открывает браузер; занят чужим → берётся следующий свободный. Локальный сайт запущен до `team.py` → ссылки туннеля на его главной нет (`team_info` только у процесса `team.py`).
 - В git не задан user.name/email; коммиты делаются через `git -c user.name="P famly" -c user.email=g371367@gmail.com commit …`.
 
 ## Как здесь работает Autopilot
