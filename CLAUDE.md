@@ -13,8 +13,9 @@ python app/server.py                                   # сайт на http://12
 TRADE_KB_NO_BROWSER=1 python app/server.py             # то же без открытия браузера
 python app/team.py                                     # «Доступ для коллег»: пароль + сайт коллег + туннель (интерактивно)
 python app/team.py --set-password                      # только сменить общий пароль (пишет data/access.json)
-node --test app/tests/                                 # все JS-тесты (50)
-PYTHONUTF8=1 python -m unittest discover -s app/tests  # все Python-тесты (80, ~50 с)
+python app/build_site.py [site]                         # открытая копия для GitHub Pages в site/ (CI: .github/workflows/pages.yml)
+node --test app/tests/                                 # все JS-тесты (58)
+PYTHONUTF8=1 python -m unittest discover -s app/tests  # все Python-тесты (85, ~50 с)
 ```
 
 Только стандартная библиотека Python и ванильный JS: без pip, без npm, без сборки.
@@ -32,11 +33,13 @@ README.md                       оглавление + сводный кален
 app/server.py                   HTTP-сервер: статика app/web/ + /api/*, данные с ETag и замком, вход для коллег
 app/auth.py                     общий пароль (PBKDF2), токены сессии (HMAC), защита от перебора
 app/team.py                     «Доступ для коллег»: cloudflared, туннель, второй сервер с паролем
+app/build_site.py               сборка открытой копии для GitHub Pages → site/ (в .gitignore)
+.github/workflows/pages.yml     на push в main/master: JS-тесты → build_site.py → GitHub Pages
 app/web/index.html              оболочка, подключает vendor/marked-12.0.2.min.js (window.marked)
 app/web/login.html              страница входа сайта коллег
-app/web/js/                     api.js, app.js (роутер), calc.js, calendar.js, shared.js — логика без DOM
+app/web/js/                     api.js, app.js (роутер), calc.js, calendar.js, shared.js, static.js — логика без DOM
 app/web/js/views/               экраны: home, docs, search, calc, products, tariffs
-app/tests/                      node: calc, calendar, products, shared, update, auth (*.test.mjs); unittest: test_server, test_auth, test_team
+app/tests/                      node: calc, calendar, products, shared, update, auth, static (*.test.mjs); unittest: test_server, test_auth, test_team, test_build_site
 data/                           tariffs.default.json, calendar.json; данные пользователя и access.json создаются при работе
 tools/                          сюда team.py скачивает cloudflared.exe (в .gitignore, создаётся при работе)
 ```
@@ -67,6 +70,7 @@ tools/                          сюда team.py скачивает cloudflared.
 - `GET /api/data/<name>`: products, tariffs, tariffs.default, settings, calendar; нет файла → `null`; заголовок `ETag: "<16 hex sha256>"` (нет файла → `"none"`). `PUT` — только products, tariffs, settings; с `If-Match` → `{ok:true}` | 409 (версия устарела) | 503 (замок не взят за 5 с); без `If-Match` — запись вслепую. Запись: межпроцессный замок `data/.<name>.lock` (msvcrt/fcntl) → временный файл → `os.replace`.
 - Все записи экранов — операцией над свежими данными через `api.update` (`saveSettingsPatch`, `upsertProduct`/`deleteProduct`, `setTariffLeaf`…): правки коллег не затираются.
 - Заметки = все `.md` в корне и папках; пропускаются скрытые папки, `node_modules`, в корне — `app`, `data`, `.autopilot`, `.claude` и файлы `CLAUDE.md`/`AGENTS.md`.
+- Открытая копия (GitHub Pages, без пароля): `build_site.py` кладёт в `site/` копию `app/web` (без login.html), `static/notes.json` `{docs, texts}` (из `server.list_docs`), `static/data/{tariffs.default,calendar}.json`, `.nojekyll`; в `index.html` пути относительные и `window.TRADE_KB_STATIC = true`. Тогда `api.js` шлёт запросы не на сервер, а в `static.js` `createStaticBackend({fetch, storage})`, который возвращает `Response` как сервер: products/tariffs/settings — `localStorage` с ключом `trade-kb:<name>` (ETag = FNV-хэш, 409 работает), поиск — `searchNotes` (копия `server.search`), курс — напрямую с ЦБ (CORS открыт), `ping → {static:true}` (в меню пометка), `/api/team` → 404.
 - Новый экран = запись в `ROUTES` + модуль в `views/` с `render(el, ctx)`.
 - Расчёты только через `calc.js`/`calendar.js` (чистые функции); экраны их не дублируют.
 - Тарифы: `data/tariffs.default.json` (исходные) + `data/tariffs.json` (только изменённые листья и `"edited"`) → `mergeTariffs`: массивы сливаются по `id`, лист заменяется целиком и получает `own:true`.

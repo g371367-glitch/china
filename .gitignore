@@ -11,3 +11,4 @@ data/tariffs.json
 data/.*.lock
 data/access.json
 tools/
+site/

@@ -1,5 +1,6 @@
 // Общий помощник для HTTP API сервера (app/server.py).
 // Используют все экраны: заметки, поиск, калькулятор, тарифы, список товаров.
+import { createStaticBackend } from './static.js';
 
 export class ApiError extends Error {
   constructor(message, status) {
@@ -28,11 +29,16 @@ async function handle(res) {
   return body;
 }
 
+// Открытая копия на GitHub Pages (app/build_site.py ставит флаг в index.html): вместо сервера — static.js.
+const staticBackend = globalThis.TRADE_KB_STATIC === true ? createStaticBackend() : null;
+
 async function send(path, options) {
+  const p = path.replace(/^\/+/, '');
   try {
-    return await fetch('/api/' + path.replace(/^\/+/, ''), { cache: 'no-store', ...options });
+    if (staticBackend) return await staticBackend(p, options);
+    return await fetch('/api/' + p, { cache: 'no-store', ...options });
   } catch {
-    throw new ApiError('Нет связи с сайтом — запущен ли «Запустить.bat»?', 0);
+    throw new ApiError(staticBackend ? 'Не удалось загрузить данные сайта — проверьте интернет' : 'Нет связи с сайтом — запущен ли «Запустить.bat»?', 0);
   }
 }
 

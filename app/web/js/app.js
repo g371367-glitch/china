@@ -171,9 +171,20 @@ async function start() {
   addLogout();
 }
 
+/** Открытая копия (GitHub Pages): данные пользователя живут только в этом браузере — предупредить. */
+function addStaticNote() {
+  if (document.getElementById('nav-static')) return;
+  const note = document.createElement('p');
+  note.id = 'nav-static';
+  note.className = 'muted small';
+  note.textContent = 'Открытая копия: товары, тарифы и настройки сохраняются только в этом браузере.';
+  document.getElementById('nav-sections').after(note);
+}
+
 /** Пункт «Выйти» — только на сайте для коллег (вход по паролю): /api/ping → team:true. */
 function addLogout() {
   api.ping().then((p) => {
+    if (p && p.static === true) addStaticNote();
     if (!p || p.team !== true || document.getElementById('nav-logout')) return;
     const btn = document.createElement('button');
     btn.type = 'button';
