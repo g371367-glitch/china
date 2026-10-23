@@ -28,6 +28,7 @@ export const LINE_LABELS = {
   fbpHandling: 'Сборка/хранение FBP',
   logistics: 'Международная логистика',
   commission: 'Комиссия Ozon',
+  serviceFee: 'Электронный сбор Ozon',
   ads: 'Реклама «оплата за заказ»',
   acquiring: 'Эквайринг и конвертация',
   returns: 'Резерв на возвраты/брак',
@@ -40,6 +41,7 @@ export const INCOMPLETE_NAMES = {
   commission: 'комиссии категории', logistics: 'логистике', ads: 'рекламе', acquiring: 'эквайрингу', returns: 'возвратам',
   tax: 'налогу', rate: 'курсу ₽/¥', eurRate: 'курсу евро', cnDelivery: 'доставке по Китаю', agentFee: 'работе агента',
   supplierPackFee: 'упаковке поставщиком', inbound: 'доставке партии', storage: 'хранению', fbpHandling: 'сборке FBP', batchDiscount: 'скидке за партию',
+  serviceFee: 'электронному сбору Ozon',
 };
 
 /** «нет данных по курсу евро, логистике» — без «неполный:». Текст, не HTML. */

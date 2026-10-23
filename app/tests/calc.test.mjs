@@ -247,3 +247,73 @@ test('логистика вписана частично: только фикс 
   near(line(none, 'logistics').cny, 0);
   assert.equal(line(calc.computeUnit(input(), 'A', t, settings()), 'logistics').hint, undefined, 'оба заданы — без подсказки');
 });
+
+// Ступени Ozon (tiered): цена × фактический вес, габариты, объёмный вес только у volumetric-ступеней.
+const tieredFixture = () => {
+  const t = fixture();
+  t.logistics.push({ id: 'tiered', name: 'Ступени Ozon', tiered: true, unit: 'CNY', fixed: { value: null }, perGram: { value: null }, bands: [
+    { tier: 'Extra Small', maxPrice: 100, maxWeight: 500, fixed: 2, perGram: 0.02, maxSide: 60, maxSum: 90 },
+    { tier: 'Budget', maxPrice: 100, maxWeight: 10000, fixed: 20, perGram: 0.01, maxSide: 60, maxSum: 150 },
+    { tier: 'Big', maxPrice: null, maxWeight: 10000, fixed: 30, perGram: 0.01, volumetric: true, maxSide: 150 },
+    { tier: 'Нет у перевозчика', maxPrice: null, maxWeight: 20000, fixed: null, perGram: null },
+  ] });
+  return t;
+};
+
+test('tiered: ступень по цене и фактическому весу, граница включительно', () => {
+  const lg = (extra) => line(calc.computeUnit(input({ logistics: 'tiered', ...extra }), 'A', tieredFixture(), settings()), 'logistics');
+  near(lg({}).cny, 6);                               // 100 ¥, 200 г → Extra Small: 2 + 0,02×200
+  assert.equal(lg({}).hint, 'ступень Extra Small');
+  near(lg({ price: 100.01 }).cny, 32);               // дороже 100 ¥ → Big: 30 + 0,01×200
+  near(lg({ weight: 501, price: 50 }).cny, 25.01);   // тяжелее 500 г → Budget: 20 + 0,01×501
+});
+
+test('tiered: габариты переводят в следующую ступень; объёмный вес только у volumetric', () => {
+  const r = (extra) => line(calc.computeUnit(input({ logistics: 'tiered', price: 50, ...extra }), 'A', tieredFixture(), settings()), 'logistics');
+  // 30×20×10: проходит в Extra Small, объёмный вес (1 кг при делителе 6000) не считается
+  near(r({ dims: { l: 30, w: 20, h: 10 } }).cny, 6);
+  // 70×10×10: сторона > 60 → Big; объёмный 7000/6000 кг больше факта 200 г
+  const big = r({ dims: { l: 70, w: 10, h: 10 } });
+  near(big.cny, 30 + 0.01 * (7000 / 6000) * 1000, 1e-9);
+  assert.match(big.hint, /Big, по объёмному весу/);
+});
+
+test('tiered: ступень без цен или вне ступеней → неполный; свой фикс заменяет ступени', () => {
+  const t = tieredFixture();
+  const none = calc.computeUnit(input({ logistics: 'tiered', weight: 15000 }), 'A', t, settings());
+  assert.ok(none.incomplete.includes('logistics'), 'ступень есть, а цен нет');
+  assert.match(line(none, 'logistics').hint, /не предлагает/);
+  assert.ok(calc.computeUnit(input({ logistics: 'tiered', weight: 25000 }), 'A', t, settings()).incomplete.includes('logistics'), 'вес вне ступеней');
+  const own = calc.mergeTariffs(t, { logistics: [{ id: 'tiered', fixed: { value: 10, unit: 'CNY' } }] });
+  const r = calc.computeUnit(input({ logistics: 'tiered' }), 'A', own, settings());
+  near(line(r, 'logistics').cny, 10);
+  assert.match(line(r, 'logistics').hint, /цена за грамм не указана/);
+});
+
+test('электронный сбор: доля от цены с минимумом и максимумом в ₽; входит в расходы', () => {
+  const t = fixture();
+  t.fees.serviceFee = { value: 0.02, unit: 'share', source: 'fixture', checked: '2026-09-01' };
+  t.fees.serviceFeeMinRub = { value: 15, unit: 'RUB' };
+  t.fees.serviceFeeMaxRub = { value: 200, unit: 'RUB' };
+  const fee = (price, st = settings()) => calc.computeUnit(input({ price }), 'A', t, st);
+  near(line(fee(100), 'serviceFee').cny, 2);        // 2% × 100 ¥ = 25 ₽ — между 15 и 200 ₽
+  near(line(fee(10), 'serviceFee').cny, 1.2);       // 0,2 ¥ < 15 ₽ / 12,5
+  near(line(fee(1000), 'serviceFee').cny, 16);      // 20 ¥ > 200 ₽ / 12,5
+  near(fee(100).cost, 63.2);                        // 61,2 из первого теста + 2
+  assert.ok(fee(100, settings({ rate: null })).incomplete.includes('rate'));
+  assert.equal(line(calc.computeUnit(input(), 'A', fixture(), settings()), 'serviceFee'), undefined, 'нет листа — нет строки');
+  const pm = calc.priceForMargin(0.3, input(), 'A', t, settings());
+  near(calc.computeUnit(input({ price: pm.price }), 'A', t, settings()).margin, 0.3, 0.001);
+});
+
+test('исходные тарифы: примеры 极掌ERP по таблице Ozon от 24.08.2026 сходятся', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const t = JSON.parse(await readFile(new URL('../../data/tariffs.default.json', import.meta.url), 'utf8'));
+  const lg = (id, extra) => line(calc.computeUnit({ purchase: 10, category: 'home', logistics: id, ...extra }, 'A', t, settings()), 'logistics').cny;
+  near(lg('ogl', { weight: 300, price: 120 }), 10.31, 0.005);
+  near(lg('cel-economy', { weight: 300, price: 120 }), 11.80, 0.005);
+  near(lg('ogl', { weight: 800, price: 100, dims: { l: 70, w: 10, h: 10 } }), 35.37, 0.005);         // Budget
+  near(lg('cel-economy', { weight: 800, price: 100, dims: { l: 70, w: 10, h: 10 } }), 55.72, 0.005); // сторона > 60 → Big
+  near(lg('ogl', { weight: 3000, price: 600 }), 84.02, 0.005);
+  near(lg('ogl', { weight: 6000, price: 1200 }), 193.17, 0.005);
+});

@@ -11,7 +11,7 @@ import { SCHEME_NAMES, parseNum, setTariffLeaf, resetTariffLeaf, addTariffCatego
 export const STALE_DAYS = 90;
 export { SCHEME_NAMES };
 
-const SHARE_KEYS = new Set(['rfbs', 'fbp', 'acquiring', 'adsPerOrder', 'returnsReserve', 'batchDiscount', 'base', 'rate']);
+const SHARE_KEYS = new Set(['rfbs', 'fbp', 'acquiring', 'serviceFee', 'adsPerOrder', 'returnsReserve', 'batchDiscount', 'base', 'rate']);
 const LEAF_NAMES = {
   rfbs: 'Комиссия rFBS', fbp: 'Комиссия FBP',
   fixed: 'Фикс за отправление', perGram: 'Ставка за грамм',
@@ -20,8 +20,9 @@ const LEAF_NAMES = {
   cnDelivery: 'Доставка по Китаю', agentFee: 'Работа агента', supplierPackFee: 'Упаковка поставщиком',
   batchDiscount: 'Скидка за партию к закупке', inboundPerUnit: 'Доставка партии, на единицу', storagePerUnit: 'Хранение, на единицу',
   fbpHandling: 'Сборка/хранение FBP',
+  serviceFee: 'Электронный сбор Ozon, доля от цены', serviceFeeMinRub: 'Электронный сбор — минимум за отправление', serviceFeeMaxRub: 'Электронный сбор — максимум за отправление',
 };
-const DEFAULT_UNIT = { adsMinRub: 'RUB', volumetricDivisor: 'cm3/kg', dutyFreeLimit: 'EUR' };
+const DEFAULT_UNIT = { adsMinRub: 'RUB', serviceFeeMinRub: 'RUB', serviceFeeMaxRub: 'RUB', volumetricDivisor: 'cm3/kg', dutyFreeLimit: 'EUR' };
 const UNIT_SIGN = { CNY: '¥', RUB: '₽', EUR: '€', g: 'г', 'cm3/kg': 'см³/кг' };
 
 export const today = () => new Date().toISOString().slice(0, 10);
@@ -93,11 +94,17 @@ function rowsFor(t) {
     name: `${escapeHtml(c.name)}${c.custom ? ' <span class="badge">своя</span>' : ''}`, sub: LEAF_NAMES[k], key: k, leaf: c[k], path: ['categories', { id: c.id }, k], custom: c.custom, catId: c.id,
   }))) });
   groups.push({ title: 'Международная логистика', rows: (t.logistics || []).flatMap((l) => {
-    const rows = ['fixed', 'perGram'].map((k) => ({ name: escapeHtml(l.name), sub: LEAF_NAMES[k] + (l.days ? `, срок ${escapeHtml(l.days)} дн.` : ''), key: k, leaf: l[k], path: ['logistics', { id: l.id }, k] }));
+    const byTiers = (k) => (l.tiered && l[k]?.value == null ? 'по ступеням (строка ниже)' : undefined);
+    const rows = ['fixed', 'perGram'].map((k) => ({ name: escapeHtml(l.name), sub: LEAF_NAMES[k] + (l.days ? `, срок ${escapeHtml(l.days)} дн.` : ''), key: k, leaf: l[k], text: byTiers(k), path: ['logistics', { id: l.id }, k] }));
     if (Array.isArray(l.bands) && l.bands.length) {
       const cur = UNIT_SIGN[l.unit || l.fixed?.unit] || '¥';
-      rows.push({ name: escapeHtml(l.name), sub: 'Ступени (используются вместо фикса и ставки)', key: 'bands', readonly: true,
-        leaf: { source: l.source, checked: l.checked }, text: l.bands.map((b) => `вес ≤ ${b.maxWeight ?? '∞'} г, цена ≤ ${b.maxPrice ?? '∞'}: ${num(b.fixed)} ${cur} + ${num(b.perGram)} ${cur}/г`).join('; ') });
+      const fee = (b) => (b.fixed == null || b.perGram == null ? 'не предлагается / нет данных' : `${num(b.fixed)} ${cur} + ${num(b.perGram)} ${cur}/г`);
+      const size = (b) => (b.maxSide != null ? `, сторона ≤ ${b.maxSide} см` : '') + (b.maxSum != null ? `, сумма сторон ≤ ${b.maxSum} см` : '');
+      const text = l.tiered
+        ? l.bands.map((b) => `${b.tier || '?'} (цена ≤ ${b.maxPrice ?? '∞'} ${cur}, вес ≤ ${b.maxWeight ?? '∞'} г${size(b)}${b.volumetric ? ', объёмный вес' : ''}): ${fee(b)}`).join('; ')
+        : l.bands.map((b) => `вес ≤ ${b.maxWeight ?? '∞'} г, цена ≤ ${b.maxPrice ?? '∞'}: ${fee(b)}`).join('; ');
+      rows.push({ name: escapeHtml(l.name), sub: 'Ступени — считаются они, пока вы не впишете свой фикс или ставку выше', key: 'bands', readonly: true,
+        leaf: { source: l.source, checked: l.checked, note: l.note }, text });
     }
     return rows;
   }) });

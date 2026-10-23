@@ -14,7 +14,7 @@ TRADE_KB_NO_BROWSER=1 python app/server.py             # то же без отк
 python app/team.py                                     # «Доступ для коллег»: пароль + сайт коллег + туннель (интерактивно)
 python app/team.py --set-password                      # только сменить общий пароль (пишет data/access.json)
 python app/build_site.py [site]                         # открытая копия для GitHub Pages в site/ (CI: .github/workflows/pages.yml)
-node --test app/tests/                                 # все JS-тесты (58)
+node --test app/tests/                                 # все JS-тесты (63)
 PYTHONUTF8=1 python -m unittest discover -s app/tests  # все Python-тесты (85, ~50 с)
 ```
 
@@ -75,7 +75,8 @@ tools/                          сюда team.py скачивает cloudflared.
 - Расчёты только через `calc.js`/`calendar.js` (чистые функции); экраны их не дублируют.
 - Тарифы: `data/tariffs.default.json` (исходные) + `data/tariffs.json` (только изменённые листья и `"edited"`) → `mergeTariffs`: массивы сливаются по `id`, лист заменяется целиком и получает `own:true`.
 - Лист тарифа: `{value, unit, [bands], source, checked, note?}`; `value:null` = нет данных → ключ в `incomplete`, в сумму идёт 0. `unit` ∈ CNY, RUB, EUR, share, cm3/kg.
-- Разделы тарифов: `categories[]` (rfbs/fbp, `ozonCategory`), `logistics[]` (fixed/perGram/bands, days), `fees`, `schemes.A–D`, `tax.{simplified, regular}`.
+- Разделы тарифов: `categories[]` (rfbs/fbp, `ozonCategory`), `logistics[]` (fixed/perGram/bands, days), `fees` (в т.ч. `serviceFee` + `serviceFeeMinRub/MaxRub` — электронный сбор, строка `serviceFee`), `schemes.A–D`, `tax.{simplified, regular}`.
+- Логистика `tiered:true` — ступени Ozon: `bands` в порядке списка `[{tier, maxPrice ¥, maxWeight г, fixed, perGram, volumetric?, maxSide?, maxSum?}]`; выбор по цене и фактическому весу, не прошла по габаритам → следующая; объёмный вес (`fees.volumetricDivisor`, 12000) только у `volumetric`. Без `tiered` — старый выбор ступени по расчётному весу. Своя правка `fixed`/`perGram` (own) заменяет ступени.
 - input калькулятора: `{purchase ¥, weight г, dims?:{l,w,h} см, category, logistics, price ¥, noAds?}`.
 - `data/settings.json`: `rate` (₽ за ¥), `rateDate`, `rateSource` ('cbr'|'manual'), `conversionReserve`, `taxMode` ('simplified'|'regular'|'custom'), `taxCustomRate`, `registrationDate`, `defaultScheme`.
 - `data/products.json`: `[{id, name, link1688, note, input, scheme, createdAt, updatedAt}]`.
@@ -107,7 +108,8 @@ tools/                          сюда team.py скачивает cloudflared.
 - `node --test app/tests/` работает через `app/tests/index.js`: Node 22+ считает каталог модулем и ищет в нём index.js.
 - `app/web/js/calc.js`, `app/web/js/views/calc.js` и все `*.bat` — с переводами строк CRLF, остальные файлы LF; `core.autocrlf=false`, `.gitattributes` нет — формат при правке сохраняй.
 - `settings.json` пишется только через `saveSettingsPatch` (`api.update` + слияние `{...cur, ...patch}`), иначе затрутся чужие поля, например `registrationDate`.
-- Все `logistics[].fixed/perGram` в `data/tariffs.default.json` сейчас `null` → любой расчёт помечен «неполный», пока пользователь не впишет свои тарифы; при `comparable:false` лучшая схема — не вывод.
+- Логистика OGL и CEL/GUOO/Xingyuan заполнена ступенями (таблица Ozon от 24.08.2026 по сторонним пересказам); GBS и China Post — `null`. Схема D всегда неполная (`fbpHandling: null`) → `comparable:false`, лучшая схема — не вывод.
+- `calc.test.mjs` сверяет `data/tariffs.default.json` с примерами 极掌ERP (OGL/CEL): правишь ступени — проверь тест.
 - `data/settings.json`, `products.json`, `tariffs.json`, `access.json`, `data/.*.lock`, `tools/` — в `.gitignore`; личные данные в настоящем корне не трогать (тесты — на временном корне).
 - `team.py` без нужды не запускать: скачивает cloudflared (~60 МБ), открывает сайт в интернет, первый запуск спрашивает пароль и пишет `data/access.json`.
 - Python в Git Bash печатает в cp1251: вывод с `¥`/кириллицей падает `UnicodeEncodeError` — запускай с `PYTHONUTF8=1`.

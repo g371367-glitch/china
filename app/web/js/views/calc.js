@@ -313,7 +313,7 @@ function resultsHtml(res) {
   const warn = SCHEMES.some((s) => res[s].warnings.includes('dutyFree'));
   return `
     ${incomplete.length ? `<p class="notice incomplete">Расчёт неполный: нет данных по ${escapeHtml(incompleteList(incomplete))}. Впишите цифры на странице <a href="#/tariffs">«Тарифы»</a> — пока они считаются как 0.</p>` : ''}
-    ${warn ? '<p class="notice">Цена выше беспошлинного лимита посылки — возможна пошлина.</p>' : ''}
+    ${warn ? '<p class="notice">Цена выше беспошлинного лимита посылки — с покупателя возьмут пошлину: сейчас 15%, с 01.01.2027 после ратификации — 5%, не менее 1 € за кг (по данным ЕЭК). Такой товар продаётся хуже.</p>' : ''}
     ${dutyFreeRef(warn)}
     <div class="table-wrap"><table class="calc-table">
       <thead><tr><th></th>${SCHEMES.map((s) => `<th scope="col" class="${s === res.best ? 'best' : ''}">${escapeHtml(SCHEME_NAMES[s])}${s === res.best ? `<div class="best-mark">лучшая по прибыли</div>${res.incomplete.length ? `<div class="small nodata">${incText(res.incomplete)}${res.comparable ? '' : ' — сравнение условно'}</div>` : ''}` : ''}</th>`).join('')}</tr></thead>
@@ -326,7 +326,7 @@ function resultsHtml(res) {
         ${total('ROI', (r) => fmtPct(r.roi))}
       </tbody>
     </table></div>
-    <p class="muted small">Маржа — прибыль от цены продажи; ROI — прибыль от вложенного (закупка, доставка по Китаю, агент/склад, логистика). ⓘ — источник и дата цифры, ⚠ — пора перепроверить.</p>`;
+    <p class="muted small">Маржа — прибыль от цены продажи; ROI — прибыль от вложенного (закупка, доставка по Китаю, агент/склад, логистика). ⓘ — источник и дата цифры, ⚠ — пора перепроверить. Ступень логистики (Extra Small, Budget, Small, Big, Premium) выбирается по цене в ¥ и весу; габариты влияют на ступень и объёмный вес — впишите их, если упаковка крупная.</p>`;
 }
 
 function targetHtml(input) {

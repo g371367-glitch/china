@@ -5,6 +5,7 @@
 //   settings.conversionReserve — запас на конвертацию, доля (0.01 = 1%);
 //   settings.taxMode   — 'simplified' | 'regular' | 'custom'; settings.taxCustomRate — доля от выручки для 'custom'.
 // input: { purchase ¥, weight г, dims?: {l,w,h} см, category id, logistics id, price ¥, noAds? }
+// Логистика: {fixed, perGram} или bands. tiered:true — ступени Ozon (pickTier): цена × фактический вес, габариты, объёмный вес только у ступеней volumetric.
 // Тарифный лист: {value, source, checked, note?, unit?, bands?}; value:null — нет данных → ключ в incomplete, в сумму идёт 0.
 
 import { SCHEMES, LINE_LABELS as LABELS } from './shared.js';
@@ -90,12 +91,42 @@ function pickBand(bands, checks) {
   return sorted.find((b) => checks.every(([k, v]) => !isNum(b[k]) || v <= b[k])) || null;
 }
 
+/**
+ * Ступени Ozon по таблице партнёрской доставки (tiered:true): ступень выбирается по цене и ФАКТИЧЕСКОМУ весу
+ * в порядке списка; не проходит по габаритам (maxSide — длинная сторона, maxSum — сумма сторон, см) — следующая.
+ * Объёмный вес — только у ступеней с volumetric:true (Big, Premium Big). → {band, w} | null
+ */
+function pickTier(t, input, price, divisor) {
+  const w = isNum(input.weight) ? input.weight : 0;
+  const d = input.dims;
+  const sides = d && [d.l, d.w, d.h].every((x) => isNum(x) && x > 0) ? [d.l, d.w, d.h] : null;
+  const band = t.bands.find((b) => (!isNum(b.maxPrice) || price <= b.maxPrice)
+    && (!isNum(b.maxWeight) || w <= b.maxWeight)
+    && (!sides || !isNum(b.maxSide) || Math.max(...sides) <= b.maxSide)
+    && (!sides || !isNum(b.maxSum) || sides[0] + sides[1] + sides[2] <= b.maxSum));
+  if (!band) return null;
+  return { band, w: band.volumetric ? chargeableWeight(input, divisor) : w };
+}
+
 function logisticsCost(input, tariffs, price, cx) {
   const t = findLogistics(tariffs, input.logistics);
   if (!t) { cx.miss('logistics'); return { cny: 0, src: {} }; }
-  const w = chargeableWeight(input, val((tariffs.fees || {}).volumetricDivisor));
-  const src = { source: t.source ?? t.fixed?.source, checked: t.checked ?? t.fixed?.checked, note: t.fixed?.note };
-  if (Array.isArray(t.bands) && t.bands.length) {
+  const divisor = val((tariffs.fees || {}).volumetricDivisor);
+  const w = chargeableWeight(input, divisor);
+  const src = { source: t.source ?? t.fixed?.source, checked: t.checked ?? t.fixed?.checked, note: t.note ?? t.fixed?.note };
+  // Свой фикс или ставка (правка со страницы «Тарифы») важнее исходных ступеней.
+  const ownSimple = !!(t.fixed?.own || t.perGram?.own);
+  if (t.tiered && Array.isArray(t.bands) && t.bands.length && !ownSimple) {
+    const pc = cx.toCny(1, currencyOf(t), 'logistics'); // ¥ за 1 единицу валюты ступеней
+    if (pc === null) return { cny: 0, src };
+    const pick = pickTier(t, input, price / pc, divisor);
+    const b = pick && pick.band;
+    if (!b) { cx.miss('logistics'); return { cny: 0, src, hint: 'вес, цена или габариты вне ступеней тарифа' }; }
+    const hint = `ступень ${b.tier || '?'}${b.volumetric && pick.w > (input.weight || 0) ? ', по объёмному весу' : ''}`;
+    if (val(b.fixed) === null || val(b.perGram) === null) { cx.miss('logistics'); return { cny: 0, src, hint: `${hint}: перевозчик её не предлагает или нет данных` }; }
+    return { cny: (val(b.fixed) + val(b.perGram) * pick.w) * pc, src, hint };
+  }
+  if (Array.isArray(t.bands) && t.bands.length && !ownSimple) {
     const cur = currencyOf(t, t.fixed);
     const pc = cx.toCny(1, cur, 'logistics'); // ¥ за 1 единицу валюты ступеней
     if (pc === null) return { cny: 0, src };
@@ -195,6 +226,14 @@ export function computeUnit(input, scheme, tariffs, settings) {
 
   const cm = commissionRate(input, scheme, tariffs, price, cx);
   add('commission', cm.rate * price, cm.src);
+
+  // Электронный сбор Ozon: доля от цены за отправление, с минимумом и максимумом в ₽ (если они заданы).
+  if ('serviceFee' in fees) {
+    let fee = cx.share(fees.serviceFee, 'serviceFee') * price;
+    if (val(fees.serviceFeeMinRub) !== null) fee = Math.max(fee, cx.money(fees.serviceFeeMinRub, 'serviceFee', 'RUB'));
+    if (val(fees.serviceFeeMaxRub) !== null && cx.rate) fee = Math.min(fee, cx.money(fees.serviceFeeMaxRub, 'serviceFee', 'RUB'));
+    add('serviceFee', fee, srcOf(fees.serviceFee));
+  }
 
   if (input.noAds) add('ads', 0, { note: 'без рекламы' });
   else add('ads', Math.max(cx.share(fees.adsPerOrder, 'ads') * price, cx.money(fees.adsMinRub, 'ads', 'RUB')), srcOf(fees.adsPerOrder));
